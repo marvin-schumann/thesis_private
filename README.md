@@ -34,6 +34,7 @@ The core objective of this project is to build an end-to-end data pipeline that:
 The pipeline is structured into modular sub-libraries: `data_access`, `data_cleaning`, and `modelling`.
 
 ## Directory Structure
+```
 NOS-PBL-DELIVERABLE/
 ├── config/ # Configuration files
 │ ├── .env # Environment variables (e.g., DB credentials - GITIGNORED)
@@ -70,6 +71,7 @@ NOS-PBL-DELIVERABLE/
 ├── run_pipeline.py # Main script to execute the entire pipeline
 ├── requirements.txt # Project dependencies
 └── LICENSE # Project license information
+```
 
 **Note on `config/interim/` vs `data/interim/`**: The provided tree shows `config/interim/`. However, `config/settings.py` defines paths like `DATA_DIR = os.path.join(BASE_DIR, "data")` and `INTERIM_DATA_DIR = os.path.join(DATA_DIR, "interim")`. The pipeline will create and use `data/interim/`, `data/processed/`, and `data/logs/` at the project root if they don't exist.
 
