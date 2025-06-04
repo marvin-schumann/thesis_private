@@ -17,8 +17,7 @@ This repository contains a Python-based modelling pipeline designed to predict t
 7.  [Running the Pipeline](#running-the-pipeline)
 8.  [Output](#output)
 9.  [Notebooks](#notebooks)
-10. [Testing](#testing)
-11. [License](#license)
+10. [License](#license)
 
 ## Project Overview
 
@@ -228,15 +227,16 @@ Train three XGBoost models (TMC, FTR, OT). These models and their associated sca
 Print model evaluation metrics to the console and log file.
 Print a sample of the GC assignment simulation results to the console and log file.
 To persist models and scalers, you would need to add saving logic (e.g., using joblib or pickle) in run_pipeline.py or modelling.py.
-Notebooks
-The notebooks/ directory contains Jupyter notebooks for various stages of analysis and development:
-01_Cleaning_and_Modelling.ipynb: Likely an initial exploration of cleaning and modelling steps.
-02_Cleaning_and_Pre-Processing.ipynb: Focuses on data cleaning and preprocessing details.
-03_Runa_Model_No_10.ipynb: Appears to be a specific model run or iteration.
-04_Best_Models.ipynb: Summarizes or showcases the best performing models.
 ```
+
+## Notebooks
+The notebooks/ directory contains Jupyter notebooks for various stages of analysis and development:
+* 01_Cleaning_and_Modelling.ipynb: Likely an initial exploration of cleaning and modelling steps.
+* 02_Cleaning_and_Pre-Processing.ipynb: Focuses on data cleaning and preprocessing details.
+* 03_Runa_Model_No_10.ipynb: Appears to be a specific model run or iteration.
+* 04_Best_Models.ipynb: Summarizes or showcases the best performing models
 
 These notebooks can be used to understand the data, experiment with different approaches, and visualize results. Ensure you have Jupyter installed (pip install notebook) and run it from the project root.
 
-License
+## License
 This project is licensed under the terms specified in the LICENSE file.
