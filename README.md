@@ -40,10 +40,6 @@ NOS-PBL-DELIVERABLE/
 │ ├── .env # Environment variables (e.g., DB credentials - GITIGNORED)
 │ ├── settings.py # Pipeline settings, paths, column names, etc.
 │ └── interim/ # (As per tree; settings.py defines data/interim for outputs)
-├── data/ # (Created by settings.py if not present)
-│ ├── interim/ # Storage for intermediate data files
-│ ├── processed/ # Storage for final processed data for modelling
-│ └── logs/ # Pipeline execution logs
 ├── libPBL2425NovaNOS/ # Core library for the pipeline
 │ ├── init.py
 │ ├── data_access/ # Module for data loading
@@ -73,7 +69,6 @@ NOS-PBL-DELIVERABLE/
 └── LICENSE # Project license information
 ```
 
-**Note on `config/interim/` vs `data/interim/`**: The provided tree shows `config/interim/`. However, `config/settings.py` defines paths like `DATA_DIR = os.path.join(BASE_DIR, "data")` and `INTERIM_DATA_DIR = os.path.join(DATA_DIR, "interim")`. The pipeline will create and use `data/interim/`, `data/processed/`, and `data/logs/` at the project root if they don't exist.
 
 ## Pipeline Stages
 
@@ -112,7 +107,7 @@ This stage involves cleaning the three raw DataFrames.
     *   **Input**: `clients_raw_df`
     *   **Output**: `client_cleaned_df`
 
-3.  **GC (Guidance Counselor) Data Cleaning**:
+3.  **GC (Call Manager) Data Cleaning**:
     *   **Module**: `libPBL2425NovaNOS.data_cleaning.gc_cleaner`
     *   **Script**: `gc_cleaner.py`
     *   **Functionality**:
@@ -233,10 +228,10 @@ To persist models and scalers, you would need to add saving logic (e.g., using j
 
 
 ## Notebooks
-The notebooks/ directory contains Jupyter notebooks for various stages of analysis and development:
-* 01_Cleaning_and_Modelling.ipynb: Likely an initial exploration of cleaning and modelling steps.
+The notebooks/ directory contains Jupyter notebooks for various stages of analysis and development. These should act as resources, but are not directly necessary for the pipeline:
+* 01_Cleaning_and_Modelling.ipynb: The full notebook from data access to model creation.
 * 02_Cleaning_and_Pre-Processing.ipynb: Focuses on data cleaning and preprocessing details.
-* 03_Runa_Model_No_10.ipynb: Appears to be a specific model run or iteration.
+* 03_Runa_Model_No_10.ipynb: Modelling Exploration.
 * 04_Best_Models.ipynb: Summarizes or showcases the best performing models
 
 These notebooks can be used to understand the data, experiment with different approaches, and visualize results. Ensure you have Jupyter installed (pip install notebook) and run it from the project root.
