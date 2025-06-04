@@ -1,73 +1,95 @@
-# data_pipeline_nos/data_access/loader.py
+# libPBL2425NovaNOS/data_access/loader.py
 import pandas as pd
 from sqlalchemy import create_engine
 from typing import List, Dict, Any
-# from ..config import settings # Relative import if running as part of the package
-from config import settings # For direct script execution or testing from root
+import sys
+import os
+import logging
+
+# Add project root to Python path
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from config import settings
+
+logger = logging.getLogger(__name__)
 
 def get_db_engine():
     """Creates and returns a SQLAlchemy engine."""
-    engine_url = f'postgresql+psycopg2://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}'
-    return create_engine(engine_url)
+    if settings.DB_PASSWORD is None:
+        logger.error("DB_PASSWORD is not set. Please check your .env file or environment variables.")
+        raise ValueError("DB_PASSWORD not configured.")
+    
+    engine_url = (
+        f'postgresql+psycopg2://{settings.DB_USER}:{settings.DB_PASSWORD}@'
+        f'{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}'
+    )
+    try:
+        engine = create_engine(engine_url)
+        # Test connection
+        with engine.connect() as connection:
+            logger.info("Database engine created and connection successful.")
+        return engine
+    except Exception as e:
+        logger.error(f"Failed to create database engine or connect: {e}")
+        raise
 
 def fetch_table_from_db(table_name: str, engine) -> pd.DataFrame:
     """Fetches a complete table from the database."""
     query = f"SELECT * FROM {settings.DB_SCHEMA}.{table_name};"
-    return pd.read_sql_query(query, engine)
+    try:
+        df = pd.read_sql_query(query, engine)
+        logger.info(f"Successfully fetched table: {table_name}, shape: {df.shape}")
+        return df
+    except Exception as e:
+        logger.error(f"Error fetching table {table_name}: {e}")
+        raise
 
 def load_and_concatenate_raw_data() -> Dict[str, pd.DataFrame]:
     """
-    Loads all raw tables from the database and concatenates
-    client and call tables.
+    Loads all raw tables from the database, as defined in settings,
+    and concatenates client and call tables.
     Returns a dictionary of the three base DataFrames:
-    'clients_df', 'calls_df', 'masterdatagcs_df'.
+    'clients_df', 'calls_df', 'gcs_df'.
     """
     engine = get_db_engine()
-    print("Fetching tables from database...")
-
-    table_names = [
-        'masterdataclients_jan_may', 'masterdataclients_jun_oct',
-        'mastercalls_jan_feb', 'mastercalls_mar_apr',
-        'mastercalls_may_jul', 'mastercalls_aug_oct',
-        'masterdatagcs'
-    ]
-
+    logger.info("Fetching tables from database...")
+    
     raw_tables = {}
-    for table_name in table_names:
-        print(f"Fetching {table_name}...")
+    for table_name in settings.RAW_TABLE_NAMES:
+        logger.info(f"Fetching {table_name}...")
         raw_tables[table_name] = fetch_table_from_db(table_name, engine)
 
-    print("Concatenating client data...")
-    clients_df = pd.concat(
-        [raw_tables['masterdataclients_jan_may'], raw_tables['masterdataclients_jun_oct']],
-        ignore_index=True
-    )
+    logger.info("Concatenating client data...")
+    client_dfs_to_concat = [raw_tables[name] for name in settings.MASTER_CLIENT_TABLES_FOR_CONCAT if name in raw_tables]
+    if not client_dfs_to_concat:
+        logger.warning("No client tables found for concatenation based on settings.MASTER_CLIENT_TABLES_FOR_CONCAT.")
+        clients_df = pd.DataFrame()
+    else:
+        clients_df = pd.concat(client_dfs_to_concat, ignore_index=True)
 
-    print("Concatenating call data...")
-    calls_df = pd.concat(
-        [raw_tables['mastercalls_jan_feb'], raw_tables['mastercalls_mar_apr'],
-         raw_tables['mastercalls_may_jul'], raw_tables['mastercalls_aug_oct']],
-        ignore_index=True
-    )
+    logger.info("Concatenating call data...")
+    call_dfs_to_concat = [raw_tables[name] for name in settings.MASTER_CALL_TABLES_FOR_CONCAT if name in raw_tables]
+    if not call_dfs_to_concat:
+        logger.warning("No call tables found for concatenation based on settings.MASTER_CALL_TABLES_FOR_CONCAT.")
+        calls_df = pd.DataFrame()
+    else:
+        calls_df = pd.concat(call_dfs_to_concat, ignore_index=True)
+    
+    if settings.MASTER_GCS_TABLE_NAME in raw_tables:
+        gcs_df = raw_tables[settings.MASTER_GCS_TABLE_NAME]
+    else:
+        logger.warning(f"Master GCS table '{settings.MASTER_GCS_TABLE_NAME}' not found in fetched tables.")
+        gcs_df = pd.DataFrame()
 
-    masterdatagcs_df = raw_tables['masterdatagcs']
-
-    print("Raw data loading and concatenation complete.")
+    logger.info("Raw data loading and concatenation complete.")
+    logger.info(f"Clients DF shape: {clients_df.shape}")
+    logger.info(f"Calls DF shape: {calls_df.shape}")
+    logger.info(f"GCS DF shape: {gcs_df.shape}")
+    
     return {
         "clients_df": clients_df,
         "calls_df": calls_df,
-        "masterdatagcs_df": masterdatagcs_df
+        "gcs_df": gcs_df  # Renamed from masterdatagcs_df for consistency
     }
-
-if __name__ == '__main__':
-    # Example of how to run this module directly for testing
-    # (This would typically be called from run_pipeline.py or a notebook)
-    base_dfs = load_and_concatenate_raw_data()
-    print(f"Clients DF shape: {base_dfs['clients_df'].shape}")
-    print(f"Calls DF shape: {base_dfs['calls_df'].shape}")
-    print(f"GCS DF shape: {base_dfs['masterdatagcs_df'].shape}")
-
-    # Optional: Save interim data
-    # base_dfs['clients_df'].to_parquet(os.path.join(settings.INTERIM_DATA_DIR, "clients_raw.parquet"))
-    # base_dfs['calls_df'].to_parquet(os.path.join(settings.INTERIM_DATA_DIR, "calls_raw.parquet"))
-    # base_dfs['masterdatagcs_df'].to_parquet(os.path.join(settings.INTERIM_DATA_DIR, "gcs_raw.parquet"))

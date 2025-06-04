@@ -1,122 +1,152 @@
-# data_pipeline_nos/data_cleaning/gc_cleaner.py
+# libPBL2425NovaNOS/data_cleaning/gc_cleaner.py
 import pandas as pd
 import numpy as np
-# from ..config import settings # For package structure
-# from config import settings # For standalone testing if config is at root
+import sys
+import os
+import logging
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from config import settings
+
+logger = logging.getLogger(__name__)
 
 def create_gcs_unique_with_mode_aggregation(masterdatagcs_df: pd.DataFrame) -> pd.DataFrame:
     """
     Cleans the master GCS data and creates the gcs_unique table by:
-    1. Filtering out 'MEDIAN' columns and 'RESOURCE_ID' (non-key).
-    2. Reverting FTR values.
+    1. Filtering out 'MEDIAN' columns and columns specified in settings.GC_COLUMNS_TO_DROP_INITIAL.
+    2. Reverting FTR values based on settings.GC_FTR_COLUMNS_PATTERN.
     3. Calculating DAYS_ACTIVE.
-    4. Aggregating data per RESOURCE_KEY using mode for specified columns.
-    5. Creating binary flags for call categories based on the aggregated data.
+    4. Aggregating data per RESOURCE_KEY using mode for columns in settings.GCS_UNIQUE_AGG_COLUMNS_TO_KEEP.
+    5. Creating binary flags for call categories based on settings.GCS_UNIQUE_CATEGORY_COLUMNS_FOR_BINARY_FLAGS.
     6. Filling all remaining NaNs with 0.
     """
-    print("Starting creation of gcs_unique table with mode aggregation...")
+    logger.info("Starting creation of gcs_unique table with mode aggregation...")
+    if masterdatagcs_df.empty:
+        logger.warning("Input masterdatagcs_df is empty. Returning empty DataFrame.")
+        return pd.DataFrame()
 
-    # Step 1: Start from original masterdatagcs & initial filtering
     df = masterdatagcs_df.copy()
-    print(f"Shape before removing 'MEDIAN' columns: {df.shape}")
-
-    # Step 2: Remove columns with 'MEDIAN' in the name
-    columns_to_keep_after_median_removal = [col for col in df.columns if 'MEDIAN' not in col]
-    df = df[columns_to_keep_after_median_removal]
-    print(f"Shape after removing 'MEDIAN' columns: {df.shape}")
-
-    # Step 3: Drop irrelevant column RESOURCE_ID (if it's the non-key one)
-
-    if 'RESOURCE_ID' in df.columns and 'RESOURCE_KEY' in df.columns :
-        df = df.drop(columns=['RESOURCE_ID'])
-        print(f"Shape after dropping 'RESOURCE_ID' (non-key): {df.shape}")
+    logger.info(f"Initial shape of GCS data: {df.shape}")
     
+    # Remove columns with 'MEDIAN' in the name
+    cols_before_median_removal = df.columns.tolist()
+    df = df[[col for col in df.columns if 'MEDIAN' not in col]] # Case-sensitive
+    cols_after_median_removal = df.columns.tolist()
+    num_median_cols_removed = len(cols_before_median_removal) - len(cols_after_median_removal)
+    if num_median_cols_removed > 0:
+        logger.info(f"Removed {num_median_cols_removed} columns containing 'MEDIAN'.")
+    else:
+        logger.info("No columns containing 'MEDIAN' found to remove.")
 
-    # Step 4: Revert FTR values (FTR = 1 - FTR)
-    ftr_columns = [col for col in df.columns if 'FTR' in col]
-    for col in ftr_columns:
-        df[col] = 1 - df[col]
-    print("FTR values reverted.")
-
-    
-    # Ensure LEG_START_TIME is datetime and extract date part
-    if 'LEG_START_TIME' not in df.columns:
-        raise ValueError("LEG_START_TIME column is required but not found in masterdatagcs_df.")
-    df['LEG_START_TIME'] = pd.to_datetime(df['LEG_START_TIME'], errors='coerce')
-    df['LEG_START_DATE'] = df['LEG_START_TIME'].dt.date
-
-    # Calculate DAYS_ACTIVE per RESOURCE_KEY
-    grouping_key_for_days_active = 'RESOURCE_KEY'
-
-    df['DAYS_ACTIVE'] = df.groupby(grouping_key_for_days_active)['LEG_START_DATE'].transform('nunique')
-    print("DAYS_ACTIVE calculated.")
-
-    # Define the columns to keep/aggregate (from notebook)
-    columns_for_aggregation = [ # These are the columns to be aggregated using mode
-        "COUNT_CALLS", "DAYS_ACTIVE",
-        "MEAN_RPC", "MEAN_FTR", "MEAN_TMC", "TOTAL_OTS", "OTS_BY_CALL",
-        "COUNT_CALLS_IF", "MEAN_RPC_IF", "MEAN_FTR_IF", "MEAN_TMC_IF", "TOTAL_OTS_IF", "OTS_BY_CALL_IF",
-        "COUNT_CALLS_OTHER", "MEAN_RPC_OTHER", "MEAN_FTR_OTHER", "MEAN_TMC_OTHER", "TOTAL_OTS_OTHER", "OTS_BY_CALL_OTHER",
-        "COUNT_CALLS_VF", "MEAN_RPC_VF", "MEAN_FTR_VF", "MEAN_TMC_VF", "TOTAL_OTS_VF", "OTS_BY_CALL_VF",
-        "COUNT_CALLS_TV", "MEAN_RPC_TV", "MEAN_FTR_TV", "MEAN_TMC_TV", "TOTAL_OTS_TV", "OTS_BY_CALL_TV",
-        "COUNT_CALLS_MOVEL", "MEAN_RPC_MOVEL", "MEAN_FTR_MOVEL", "MEAN_TMC_MOVEL", "TOTAL_OTS_MOVEL", "OTS_BY_CALL_MOVEL"
+    # Drop initial columns (e.g., 'RESOURCE_ID' if it's the non-key one)
+    # Using settings.GC_COLUMNS_TO_DROP_INITIAL
+    cols_to_drop_initial = [
+        col for col in settings.GC_COLUMNS_TO_DROP_INITIAL 
+        if col in df.columns and col != settings.KEY_RESOURCE_KEY # Ensure we don't drop the main key
     ]
-    # Ensure these columns actually exist in the DataFrame 'df' before trying to aggregate them
-    existing_columns_for_aggregation = [col for col in columns_for_aggregation if col in df.columns]
-    if not existing_columns_for_aggregation:
-        print("Warning: None of the specified columns for aggregation exist in the DataFrame.")
-        
+    if cols_to_drop_initial:
+        df = df.drop(columns=cols_to_drop_initial)
+        logger.info(f"Dropped initial GC columns based on settings.GC_COLUMNS_TO_DROP_INITIAL: {cols_to_drop_initial}")
+    
+    # Commented out FTR reversion logic 
+    '''
+    # Revert FTR values (FTR = 1 - FTR) using settings.GC_FTR_COLUMNS_PATTERN
+    ftr_columns_to_revert = [col for col in df.columns if settings.GC_FTR_COLUMNS_PATTERN in col]
+    if ftr_columns_to_revert:
+        for col in ftr_columns_to_revert:
+            df[col] = 1 - pd.to_numeric(df[col], errors='coerce') # Ensure numeric for calculation
+            if df[col].isnull().any():
+                logger.warning(f"NaNs produced during FTR reversion for column '{col}'. Check original data type and values.")
+        logger.info(f"Reverted FTR values for columns: {ftr_columns_to_revert}")
+    else:
+        logger.info(f"No FTR columns found matching pattern '{settings.GC_FTR_COLUMNS_PATTERN}' for reversion.")
+    '''
 
-    # Helper for mode aggregation
+    # Ensure LEG_START_TIME is datetime and extract date part
+    # This column name should ideally be in settings if it can vary.
+    leg_start_time_col = 'LEG_START_TIME' 
+    if leg_start_time_col not in df.columns:
+        logger.error(f"'{leg_start_time_col}' column is required but not found in masterdatagcs_df.")
+        raise ValueError(f"'{leg_start_time_col}' column is required for GCS cleaning.")
+    df[leg_start_time_col] = pd.to_datetime(df[leg_start_time_col], errors='coerce')
+    df['LEG_START_DATE_for_active_days'] = df[leg_start_time_col].dt.date # Use .date for nunique count of days
+    
+    # Calculate DAYS_ACTIVE per RESOURCE_KEY
+    if settings.KEY_RESOURCE_KEY not in df.columns:
+        logger.error(f"Key column '{settings.KEY_RESOURCE_KEY}' not found. Cannot calculate DAYS_ACTIVE.")
+        raise ValueError(f"'{settings.KEY_RESOURCE_KEY}' not found in GCS data.")
+        
+    df['DAYS_ACTIVE'] = df.groupby(settings.KEY_RESOURCE_KEY)['LEG_START_DATE_for_active_days'].transform('nunique')
+    df = df.drop(columns=['LEG_START_DATE_for_active_days']) # Clean up temp column
+    logger.info("DAYS_ACTIVE calculated.")
+    
+    # Use settings.GCS_UNIQUE_AGG_COLUMNS_TO_KEEP for aggregation
+    columns_for_aggregation = [col for col in settings.GCS_UNIQUE_AGG_COLUMNS_TO_KEEP if col in df.columns]
+    if not columns_for_aggregation:
+        logger.warning("No specified columns from settings.GCS_UNIQUE_AGG_COLUMNS_TO_KEEP exist in the GCS DataFrame after pre-processing. Aggregation might be empty.")
+        # Create a DataFrame with just RESOURCE_KEY if no agg columns, or handle as error
+        if settings.KEY_RESOURCE_KEY in df.columns:
+            return df[[settings.KEY_RESOURCE_KEY]].drop_duplicates().reset_index(drop=True).fillna(0) # fillna(0) if any key is NaN (unlikely)
+        else:
+            return pd.DataFrame() # Should have failed earlier if KEY_RESOURCE_KEY missing
+
     def mode_agg_fn(series):
-        if series.empty:
+        if series.empty or series.dropna().empty:
             return np.nan
         modes = series.mode()
-        return modes.iloc[0] if not modes.empty else (series.iloc[0] if not series.dropna().empty else np.nan)
-
-    print(f"Aggregating data by '{grouping_key_for_days_active}' using mode...")
-    # Group and aggregate
-    gcs_unique = (
-        df.groupby(grouping_key_for_days_active, as_index=False) # Keep key as column
-        [existing_columns_for_aggregation] # Select only existing columns
-        .agg(mode_agg_fn) # Apply the refined mode_agg_fn
-    )
-    # The .reset_index() is not needed if as_index=False is used in groupby
-    print(f"Shape after aggregation: {gcs_unique.shape}")
+        # If multiple modes, pick the first. If no mode (all unique values), pandas mode() returns empty.
+        # In such case, original code took series.iloc[0] if series not allna.
+        # For numeric data where mode fails (e.g. all unique floats), picking first is arbitrary.
+        # Returning NaN might be safer if mode is truly the desired aggregation.
+        return modes.iloc[0] if not modes.empty else (series.dropna().iloc[0] if not series.dropna().empty else np.nan)
 
 
-    # Define columns grouped by category for binary flags
-    # These refer to columns *in the aggregated gcs_unique* DataFrame
-    category_columns_for_binary_flags = {
-        "IF": ["COUNT_CALLS_IF", "MEAN_RPC_IF", "MEAN_FTR_IF", "MEAN_TMC_IF", "TOTAL_OTS_IF", "OTS_BY_CALL_IF"],
-        "OTHER": ["COUNT_CALLS_OTHER", "MEAN_RPC_OTHER", "MEAN_FTR_OTHER", "MEAN_TMC_OTHER", "TOTAL_OTS_OTHER", "OTS_BY_CALL_OTHER"],
-        "VF": ["COUNT_CALLS_VF", "MEAN_RPC_VF", "MEAN_FTR_VF", "MEAN_TMC_VF", "TOTAL_OTS_VF", "OTS_BY_CALL_VF"],
-        "TV": ["COUNT_CALLS_TV", "MEAN_RPC_TV", "MEAN_FTR_TV", "MEAN_TMC_TV", "TOTAL_OTS_TV", "OTS_BY_CALL_TV"],
-        "MOVEL": ["COUNT_CALLS_MOVEL", "MEAN_RPC_MOVEL", "MEAN_FTR_MOVEL", "MEAN_TMC_MOVEL", "TOTAL_OTS_MOVEL", "OTS_BY_CALL_MOVEL"]
-    }
-
-    print("Creating binary flags for call categories...")
-    for cat, cols_in_category in category_columns_for_binary_flags.items():
-        # Filter to only columns that actually exist in gcs_unique
-        existing_cols_for_flag = [col for col in cols_in_category if col in gcs_unique.columns]
-        if existing_cols_for_flag:
-            # Create binary column: 1 if any of the category's columns are not NaN, 0 otherwise
-            # This check happens *before* the final fillna(0) on gcs_unique
-            gcs_unique[f"CALLS_{cat}_BINARY"] = gcs_unique[existing_cols_for_flag].notna().any(axis=1).astype(int)
-        else:
-            gcs_unique[f"CALLS_{cat}_BINARY"] = 0 # Default if no relevant columns found for this category
-            print(f"Warning: No columns found for category {cat} to create binary flag. CALLS_{cat}_BINARY set to 0.")
-
-    # Replace all NaNs in the DataFrame with 0
-    print("Filling remaining NaNs with 0...")
-    gcs_unique = gcs_unique.fillna(0)
-
+    logger.info(f"Aggregating data by '{settings.KEY_RESOURCE_KEY}' using mode for columns: {columns_for_aggregation}")
     
-    print("Final shape of gcs_unique:", gcs_unique.shape)
-    if not gcs_unique.empty:
-        print("Remaining NaNs:\n", gcs_unique.isna().sum()[gcs_unique.isna().sum() > 0])
-    else:
-        print("gcs_unique is empty.")
-    print("Creation of gcs_unique table complete.")
-    return gcs_unique
+    gcs_unique = df.groupby(settings.KEY_RESOURCE_KEY, as_index=False)[columns_for_aggregation].agg(mode_agg_fn)
+    logger.info(f"Shape after aggregation: {gcs_unique.shape}")
 
+    # Create binary flags for call categories using settings.GCS_UNIQUE_CATEGORY_COLUMNS_FOR_BINARY_FLAGS
+    logger.info("Creating binary flags for call categories based on settings.GCS_UNIQUE_CATEGORY_COLUMNS_FOR_BINARY_FLAGS...")
+    for cat, count_cols_for_flag_check in settings.GCS_UNIQUE_CATEGORY_COLUMNS_FOR_BINARY_FLAGS.items():
+        # Original logic: flag is 1 if ANY of the listed columns for that category are not NaN *before* fillna(0)
+        # More robust: check if the main count column for the category (e.g. COUNT_CALLS_IF) is > 0
+        # This assumes that if COUNT_CALLS_CAT > 0, then the category is active.
+        
+        # Check if the *aggregated* count columns (e.g., 'COUNT_CALLS_IF') exist in gcs_unique
+        # and have a value greater than 0 (after mode aggregation and potential NaNs).
+        # The list in settings.GCS_UNIQUE_CATEGORY_COLUMNS_FOR_BINARY_FLAGS refers to columns in gcs_unique.
+        
+        flag_col_name = f"CALLS_{cat}_BINARY"
+        # Check if any of the specified indicator columns for this category exist in gcs_unique and are non-zero
+        # These columns are post-aggregation.
+        relevant_gcs_unique_cols_for_cat = [col for col in count_cols_for_flag_check if col in gcs_unique.columns]
+        if relevant_gcs_unique_cols_for_cat:
+            # Flag is 1 if any of these columns have a value > 0 (assuming counts or similar metrics)
+            # Need to handle NaNs from mode aggregation before this check if they mean "no activity"
+            # The final fillna(0) comes later. Here, a NaN from mode means mode couldn't be determined.
+            # Let's assume NaN here means "no data for mode", so effectively 0 for count-like things.
+            gcs_unique[flag_col_name] = (gcs_unique[relevant_gcs_unique_cols_for_cat].fillna(0) > 0).any(axis=1).astype(int)
+            logger.debug(f"Created binary flag '{flag_col_name}' based on columns: {relevant_gcs_unique_cols_for_cat}")
+        else:
+            gcs_unique[flag_col_name] = 0 
+            logger.warning(f"No columns found in gcs_unique for category '{cat}' based on settings to create binary flag '{flag_col_name}'. Set to 0.")
+            
+    logger.info("Filling remaining NaNs with 0 in gcs_unique...")
+    gcs_unique = gcs_unique.fillna(0)
+    
+    if not gcs_unique.empty:
+        nan_counts = gcs_unique.isna().sum()
+        nan_counts_filtered = nan_counts[nan_counts > 0]
+        if not nan_counts_filtered.empty:
+            logger.warning(f"Unexpected NaNs remain in gcs_unique after fillna(0):\n{nan_counts_filtered}")
+        else:
+            logger.debug("No NaNs remaining in gcs_unique after fillna(0).")
+    else:
+        logger.warning("gcs_unique is empty after processing.")
+        
+    logger.info(f"Creation of gcs_unique table complete. Final shape: {gcs_unique.shape}")
+    return gcs_unique
