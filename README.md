@@ -221,9 +221,9 @@ The script will log its progress to the console and to a file specified in confi
 ### Output
 The pipeline execution will:
 * Create/populate directories defined in config/settings.py:
-* data/interim/: May store intermediate CSV files if saving steps are added (currently, primarily in-memory).
-* data/processed/: May store the final modelling dataset CSV if saving steps are added.
-* data/logs/: Contains pipeline.log with detailed execution logs.
+* **data/interim/**: May store intermediate CSV files if saving steps are added (currently, primarily in-memory).
+* **data/processed/**: May store the final modelling dataset CSV if saving steps are added.
+* **data/logs/**: Contains pipeline.log with detailed execution logs.
 * Train three XGBoost models (TMC, FTR, OT). These models and their associated scalers are currently stored in memory within the modelling_results dictionary returned by modelling.run_modelling().
 * Print model evaluation metrics to the console and log file.
 * Print a sample of the GC assignment simulation results to the console and log file.
