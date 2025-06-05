@@ -1,6 +1,6 @@
 # NOS-PBL-DELIVERABLE: Modelling Pipeline
 
-This repository contains a Python-based modelling pipeline designed to predict telecom customer interaction metrics and simulate optimal resource allocation. The pipeline processes raw data through stages of access, cleaning, merging, and modelling, ultimately training models for Talk Time (TMC), First Call Resolution (FTR), and Onsite Technician (OT) dispatch, and includes a simulation for cost-optimized Guidance Counselor (GC) assignment.
+This repository contains a Python-based modelling pipeline designed to predict telecom customer interaction metrics and simulate optimal resource allocation. The pipeline processes raw data through stages of access, cleaning, merging, and modelling, ultimately training models for Call Time (TMC), First Contact Resolution (FTR), and Work Order (OT) which is an Onsite Technician dispatch, and includes a simulation for cost-optimized Contact Manager (GC) assignment.
 
 ## Table of Contents
 
@@ -26,9 +26,9 @@ The core objective of this project is to build an end-to-end data pipeline that:
 *   Cleans and preprocesses this data.
 *   Merges disparate data sources into a unified dataset suitable for modelling.
 *   Trains machine learning models to predict:
-    *   **TMC (Talk/Mean Call Duration)**: Regression model.
-    *   **FTR (First Call Resolution)**: Classification model.
-    *   **OT (Onsite Technician Dispatch)**: Classification model.
+    *   **TMC (Call Duration)**: Regression model.
+    *   **FTR (First Contact Resolution)**: Classification model.
+    *   **OT (Work Order)**: Classification model.
 *   Simulates the assignment of incoming calls to GCs to minimize a defined cost function, leveraging the trained models.
 
 The pipeline is structured into modular sub-libraries: `data_access`, `data_cleaning`, and `modelling`.
@@ -90,7 +90,7 @@ This stage involves cleaning the three raw DataFrames.
     *   **Module**: `libPBL2425NovaNOS.data_cleaning.call_cleaner`
     *   **Script**: `call_cleaner.py`
     *   **Functionality**:
-        *   Adds an `FTR_depen` column.
+        *   Adds an `FTR_dependent` column.
         *   Drops specified irrelevant columns.
         *   Removes rows with any NaN values (note: this is an aggressive step).
     *   **Input**: `calls_raw_df`
@@ -142,9 +142,9 @@ This stage involves cleaning the three raw DataFrames.
         *   Splits data into training and testing sets.
         *   Optionally applies SMOTE for handling class imbalance in FTR and OT classification tasks (if `imblearn` is installed).
         *   Trains three separate XGBoost models:
-            *   `XGBRegressor` for TMC (Talk Time).
-            *   `XGBClassifier` for FTR (First Call Resolution).
-            *   `XGBClassifier` for OT (Onsite Technician dispatch).
+            *   `XGBRegressor` for TMC (Call Duration).
+            *   `XGBClassifier` for FTR (First Contact Resolution).
+            *   `XGBClassifier` for OT (Work Order).
     *   **Model Evaluation**: Calculates relevant metrics (R2, RMSE for TMC; ROC AUC, F1-score, Precision, Recall for FTR & OT).
     *   **GC Assignment Simulation**:
         *   Takes a sample of calls from the dataset.
