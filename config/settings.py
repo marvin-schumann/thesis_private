@@ -38,30 +38,6 @@ MASTER_CALL_TABLES_FOR_CONCAT = [
 MASTER_GCS_TABLE_NAME = 'masterdatagcs'
 
 
-# --- File Paths for Data Storage ---
-DATA_DIR = os.path.join(BASE_DIR, "data")
-INTERIM_DATA_DIR = os.path.join(DATA_DIR, "interim")
-PROCESSED_DATA_DIR = os.path.join(DATA_DIR, "processed")
-LOGS_DIR = os.path.join(DATA_DIR, "logs") # For pipeline logs
-
-# Output file names (consider using .parquet for better performance and typing)
-RAW_CLIENTS_FILE = os.path.join(INTERIM_DATA_DIR, "clients_raw.csv")
-RAW_CALLS_FILE = os.path.join(INTERIM_DATA_DIR, "calls_raw.csv")
-RAW_GCS_FILE = os.path.join(INTERIM_DATA_DIR, "gcs_raw.csv")
-
-CLEANED_CALLS_FILE = os.path.join(INTERIM_DATA_DIR, "calls_cleaned.csv")
-CLEANED_GCS_UNIQUE_FILE = os.path.join(INTERIM_DATA_DIR, "gcs_unique_cleaned.csv")
-CLEANED_GCS_DETAILED_FILE = os.path.join(INTERIM_DATA_DIR, "gcs_detailed_cleaned.csv")
-CLEANED_CLIENT_FILE = os.path.join(INTERIM_DATA_DIR, "client_cleaned.csv")
-
-FINAL_MODELING_DATASET_FILE = os.path.join(PROCESSED_DATA_DIR, "modelling_dataset.csv")
-
-# Ensure data directories exist (good practice to create them if they don't)
-os.makedirs(INTERIM_DATA_DIR, exist_ok=True)
-os.makedirs(PROCESSED_DATA_DIR, exist_ok=True)
-os.makedirs(LOGS_DIR, exist_ok=True)
-
-
 # --- Column Definitions & Lists (can also be in a separate column_definitions.py) ---
 
 # GC Cleaner related
@@ -169,8 +145,4 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000) # Can be problematic, often better to set a large number like 1000
 pd.set_option('display.max_colwidth', None)
 
-# --- Logging Configuration (Basic Example) ---
-LOG_LEVEL = "INFO" # e.g., DEBUG, INFO, WARNING, ERROR
-LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-LOG_FILE = os.path.join(LOGS_DIR, "pipeline.log")
 
