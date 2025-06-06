@@ -92,7 +92,7 @@ This stage involves cleaning the three raw DataFrames.
     *   **Functionality**:
         *   Adds an `FTR_dependent` column.
         *   Drops specified irrelevant columns.
-        *   Removes rows with any NaN values (note: this is an aggressive step).
+        *   Removes rows with any NaN values (Note: To ensure the final dataset is ready for modelling without requiring further imputation, any rows with remaining NaN values after the merges are dropped).
     *   **Input**: `calls_raw_df`
     *   **Output**: `calls_cleaned_df`
 
@@ -127,7 +127,7 @@ This stage involves cleaning the three raw DataFrames.
     *   Prefixes columns of each DataFrame (e.g., `call_`, `client_`, `gcs_`) to avoid name clashes, excluding key columns.
     *   Performs a `merge_asof` between call data and client data based on `PERSON_SK` and normalized dates, associating each call with the most recent client snapshot.
     *   Performs a left merge of the result with GC data on `RESOURCE_KEY`.
-    *   Drops rows with any remaining NaN values (note: another aggressive step).
+    *   Drops rows with any remaining NaN values (Note: To ensure the final dataset is ready for modelling without requiring further imputation, any rows with remaining NaN values after the merges are dropped).
     *   Cleans up temporary date columns.
 *   **Input**: `calls_cleaned_df`, `client_cleaned_df`, `gcs_unique_cleaned_df`
 *   **Output**: `final_modelling_df`
@@ -140,7 +140,7 @@ This stage involves cleaning the three raw DataFrames.
     *   **Preprocessing**: Handles categorical features via One-Hot Encoding and scales numerical features using `StandardScaler`.
     *   **Model Training**:
         *   Splits data into training and testing sets.
-        *   Optionally applies SMOTE for handling class imbalance in FTR and OT classification tasks.
+        *   It applies SMOTE (from \imblearn`) to handle class imbalance** in the FTR and OT classification tasks.
         *   Trains three separate XGBoost models:
             *   `XGBRegressor` for TMC (Call Duration).
             *   `XGBClassifier` for FTR (First Contact Resolution).
