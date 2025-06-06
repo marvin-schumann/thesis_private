@@ -140,7 +140,7 @@ This stage involves cleaning the three raw DataFrames.
     *   **Preprocessing**: Handles categorical features via One-Hot Encoding and scales numerical features using `StandardScaler`.
     *   **Model Training**:
         *   Splits data into training and testing sets.
-        *   Optionally applies SMOTE for handling class imbalance in FTR and OT classification tasks (if `imblearn` is installed).
+        *   Optionally applies SMOTE for handling class imbalance in FTR and OT classification tasks.
         *   Trains three separate XGBoost models:
             *   `XGBRegressor` for TMC (Call Duration).
             *   `XGBClassifier` for FTR (First Contact Resolution).
@@ -160,7 +160,6 @@ This stage involves cleaning the three raw DataFrames.
 *   **`config/settings.py`**: This is the central configuration file. It defines:
     *   Database credentials (loaded from `.env`).
     *   Database schema and table names.
-    *   File paths for data storage (interim, processed, logs). These directories (`data/interim`, `data/processed`, `data/logs`) are created at the project root if they don't exist.
     *   Lists of columns for various cleaning and feature engineering steps.
     *   Logging configuration.
 *   **`config/.env`**: This file (which should be in your `.gitignore`) stores sensitive information like database credentials. Create this file in the `config/` directory based on `.env.example` (if provided, otherwise manually). Example structure:
@@ -198,10 +197,7 @@ This stage involves cleaning the three raw DataFrames.
     ```bash
     pip install -r requirements.txt
     ```
-    If `imblearn` is needed for SMOTE (used in `modelling.py`), ensure it's in `requirements.txt` or install it separately:
-    ```bash
-    pip install imbalanced-learn
-    ```
+   
 
 4.  **Configure Environment Variables**:
     *   Create a `.env` file inside the `config/` directory (e.g., `config/.env`).
@@ -218,13 +214,10 @@ The script will log its progress to the console and to a file specified in confi
 ### Output
 The pipeline execution will:
 * Create/populate directories defined in config/settings.py:
-* **data/interim/**: May store intermediate CSV files if saving steps are added (currently, primarily in-memory).
-* **data/processed/**: May store the final modelling dataset CSV if saving steps are added.
-* **data/logs/**: Contains pipeline.log with detailed execution logs.
 * Train three XGBoost models (TMC, FTR, OT). These models and their associated scalers are currently stored in memory within the modelling_results dictionary returned by modelling.run_modelling().
-* Print model evaluation metrics to the console and log file.
-* Print a sample of the GC assignment simulation results to the console and log file.
-To persist models and scalers, you would need to add saving logic (e.g., using joblib or pickle) in run_pipeline.py or modelling.py.
+* Print model evaluation metrics to the console.
+* Print a sample of the GC assignment simulation results to the console.
+
 
 
 ## Notebooks
