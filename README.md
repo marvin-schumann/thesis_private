@@ -231,7 +231,7 @@ To persist models and scalers, you would need to add saving logic (e.g., using j
 The notebooks/ directory contains Jupyter notebooks for various stages of analysis and development. These should act as resources, but are not directly necessary for the pipeline:
 * 01_Cleaning_and_Modelling.ipynb: The full notebook from data access to model creation.
 * 02_Cleaning_and_Pre-Processing.ipynb: Focuses on data cleaning and preprocessing details.
-* 03_Runa_Model_No_10.ipynb: Modelling Exploration.
+* 03_Modelling.ipynb: Modelling Exploration.
 * 04_Best_Models.ipynb: Summarizes or showcases the best performing models
 
 These notebooks can be used to understand the data, experiment with different approaches, and visualize results. Ensure you have Jupyter installed (pip install notebook) and run it from the project root.
