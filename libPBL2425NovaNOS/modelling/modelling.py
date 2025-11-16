@@ -8,9 +8,20 @@ from sklearn.metrics import (
     r2_score, mean_squared_error, roc_auc_score, precision_recall_curve, f1_score,
     precision_score, recall_score 
 )
+from sklearn.dummy import DummyClassifier
 import sys
 import os
 import logging
+import joblib
+import json
+from pathlib import Path
+
+# Data path for CSV loading (if loading directly from CSV)
+DATA_PATH = '/Users/marvinschumann/Library/CloudStorage/OneDrive-SharedLibraries-NovaSBE/PBL - NOS (Consultants) - General/03 Data/01 Full Datasets/Cleaned Data/07052025/full_merged_df.csv'
+
+# Save directory for models, scalers, and feature lists
+ASSETS_DIR = 'models'
+os.makedirs(ASSETS_DIR, exist_ok=True)
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 if PROJECT_ROOT not in sys.path:
@@ -30,6 +41,44 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # --- Helper Functions ---
+def compute_topic_stats(source_df: pd.DataFrame, topic_column: str, tmc_col: str, ftr_col: str, ot_col: str) -> pd.DataFrame:
+    """
+    Computes per-topic averages (TMC/FTR/OT) comparable to the rule-based heuristic.
+    Returns a DataFrame that also includes a global fallback row with key '__GLOBAL__'.
+    """
+    if topic_column not in source_df.columns:
+        raise ValueError(f"Topic column '{topic_column}' not found; cannot compute topic statistics.")
+
+    grouped = source_df.groupby(topic_column, observed=False).agg(
+        {
+            tmc_col: "mean",
+            ftr_col: "mean",
+            ot_col: "mean"
+        }
+    ).rename(
+        columns={
+            tmc_col: "call_TOPIC_AVG_TMC",
+            ftr_col: "call_TOPIC_AVG_FTR",
+            ot_col: "call_TOPIC_AVG_OT"
+        }
+    )
+    grouped["call_TOPIC_COUNT"] = source_df.groupby(topic_column, observed=False)[tmc_col].count()
+
+    global_row = pd.DataFrame(
+        {
+            topic_column: ["__GLOBAL__"],
+            "call_TOPIC_AVG_TMC": [grouped["call_TOPIC_AVG_TMC"].mean()],
+            "call_TOPIC_AVG_FTR": [grouped["call_TOPIC_AVG_FTR"].mean()],
+            "call_TOPIC_AVG_OT": [grouped["call_TOPIC_AVG_OT"].mean()],
+            "call_TOPIC_COUNT": [grouped["call_TOPIC_COUNT"].sum()]
+        }
+    ).set_index(topic_column)
+
+    grouped = pd.concat([grouped, global_row])
+    grouped.reset_index(inplace=True)
+    return grouped
+
+
 def get_time_of_day(hour: int) -> str:
     """Categorizes hour of the day."""
     if not isinstance(hour, (int, float, np.number)) or pd.isna(hour): # Handle NaN hours
@@ -231,6 +280,33 @@ def scale_features_df(X_train_data: pd.DataFrame, X_test_data: pd.DataFrame,
     return X_train_scaled, X_test_scaled, current_scaler, cols_to_scale_final_train
 
 
+def extract_positive_class_probability(model, proba_vector: np.ndarray) -> float:
+    """
+    Returns the probability associated with the positive class (label=1).
+    Handles edge cases where the classifier only exposes a single class.
+    """
+    classes = getattr(model, "classes_", None)
+    if classes is None:
+        if proba_vector.size == 0:
+            return 0.0
+        if proba_vector.size == 1:
+            return float(proba_vector[0])
+        return float(proba_vector[-1])
+
+    classes_list = list(classes)
+    if 1 in classes_list:
+        idx = classes_list.index(1)
+        if idx < proba_vector.size:
+            return float(proba_vector[idx])
+        return float(proba_vector[-1])
+
+    # If the positive class is absent, treat probability of OT/FTR=1 as 0 unless
+    # the sole class is 1 (always positive).
+    if proba_vector.size == 1 and classes_list and classes_list[0] == 1:
+        return float(proba_vector[0])
+    return 0.0
+
+
 def simulate_boosted_calls(
     sample_ids_for_sim: list,
     final_df_for_lookup: pd.DataFrame, # Contains features for the sampled calls (X)
@@ -300,7 +376,8 @@ def simulate_boosted_calls(
                 cols_to_transform_ftr = [c for c in cols_scaled_ftr if c in x_ftr_scaled_df.columns]
                 if cols_to_transform_ftr:
                     x_ftr_scaled_df[cols_to_transform_ftr] = scaler_ftr.transform(x_ftr_unscaled_df[cols_to_transform_ftr])
-            p_ftr = xgb_clf_ftr.predict_proba(x_ftr_scaled_df)[0, 1]
+            ftr_proba_vec = xgb_clf_ftr.predict_proba(x_ftr_scaled_df)[0]
+            p_ftr = extract_positive_class_probability(xgb_clf_ftr, ftr_proba_vec)
 
             # For OT model (similar logic):
             current_features_unscaled_ot = call_specific_part_series.copy()
@@ -315,7 +392,8 @@ def simulate_boosted_calls(
                 cols_to_transform_ot = [c for c in cols_scaled_ot if c in x_ot_scaled_df.columns]
                 if cols_to_transform_ot:
                     x_ot_scaled_df[cols_to_transform_ot] = scaler_ot.transform(x_ot_unscaled_df[cols_to_transform_ot])
-            p_ot = xgb_clf_ot.predict_proba(x_ot_scaled_df)[0, 1]
+            ot_proba_vec = xgb_clf_ot.predict_proba(x_ot_scaled_df)[0]
+            p_ot = extract_positive_class_probability(xgb_clf_ot, ot_proba_vec)
             
             # Cost Calculation:
             # Ensure 'client_LEG_DURATION_MEAN_365_TOTAL' is correctly named and available.
@@ -371,17 +449,19 @@ def run_modelling(df_input: pd.DataFrame, gcs_unique_input: pd.DataFrame) -> dic
         
     full_merged_df = df_input.copy() # This is the output of merger.py
     
-    # Ensure gcs_unique_input is correctly indexed for simulation
-    if gcs_unique_input.index.name != settings.KEY_RESOURCE_KEY:
-        if settings.KEY_RESOURCE_KEY in gcs_unique_input.columns:
-            gcs_unique_input = gcs_unique_input.set_index(settings.KEY_RESOURCE_KEY)
-            logger.info(f"Set index of gcs_unique_input to '{settings.KEY_RESOURCE_KEY}'.")
-        else:
-            msg = (f"Key '{settings.KEY_RESOURCE_KEY}' not found in gcs_unique_input columns for index setting. "
-                   "Simulation may fail or produce incorrect results.")
-            logger.error(msg)
-            # Depending on severity, either return error or allow to proceed with warning
-            return {'error': msg}
+    # Ensure gcs_unique_input is correctly indexed for simulation (if not empty)
+    if not gcs_unique_input.empty:
+        if gcs_unique_input.index.name != settings.KEY_RESOURCE_KEY:
+            if settings.KEY_RESOURCE_KEY in gcs_unique_input.columns:
+                gcs_unique_input = gcs_unique_input.set_index(settings.KEY_RESOURCE_KEY)
+                logger.info(f"Set index of gcs_unique_input to '{settings.KEY_RESOURCE_KEY}'.")
+            else:
+                msg = (f"Key '{settings.KEY_RESOURCE_KEY}' not found in gcs_unique_input columns for index setting. "
+                       "Simulation will be skipped.")
+                logger.warning(msg)
+                gcs_unique_input = pd.DataFrame()  # Set to empty to skip simulation
+    else:
+        logger.info("gcs_unique_input is empty. Simulation will be skipped, but models will still be trained.")
 
     results_dict = {} 
     
@@ -392,6 +472,16 @@ def run_modelling(df_input: pd.DataFrame, gcs_unique_input: pd.DataFrame) -> dic
     TARGET_TMC = "TMC_dependent"
     TARGET_FTR = "FTR_dependent"
     TARGET_OT  = "OT_dependent"
+
+    TARGET_COLS_TO_DROP = [
+        'call_LEG_DURATION_SEC_QTY',   # TMC raw target
+        'call_FTR_depen',              # Alternate FTR source column if present
+        'call_FTR_CALCULATED',         # FTR raw source column
+        'call_FLAG_OT',                # OT raw target
+        'call_FTR_1_SUM',              # FTR leakage proxy
+    'call_CALL_DURATION_SEQ_QTY',  # TMC leakage proxy
+    'call_FTR_Actual_1'            # Additional FTR leakage proxy
+    ]
 
     # Raw column names for targets (should come from merger.py with prefixes)
     # These need to be robustly identified, possibly from settings or a naming convention.
@@ -419,6 +509,26 @@ def run_modelling(df_input: pd.DataFrame, gcs_unique_input: pd.DataFrame) -> dic
     if raw_col_ot not in full_merged_df.columns:
         raise ValueError(f"Required raw target column '{raw_col_ot}' is missing from merged data.")
     full_merged_df[TARGET_OT] = pd.to_numeric(full_merged_df[raw_col_ot], errors='coerce').fillna(0).astype(int)
+
+    print("\n[DIAGNOSTIC CHECK 1: PRE-CLEANING]")
+    print("OT target distribution in raw, merged data:")
+    print(full_merged_df[TARGET_OT].value_counts(normalize=True, dropna=False))
+
+    topic_column = 'call_TOPIC_CLASSIFIC_ENTRY_AT_FT'
+    topic_stats_df = None
+    if topic_column in full_merged_df.columns:
+        topic_stats_df = compute_topic_stats(full_merged_df, topic_column, TARGET_TMC, TARGET_FTR, TARGET_OT)
+        topic_stats_path = Path(ASSETS_DIR) / 'topic_stats.csv'
+        topic_stats_df.to_csv(topic_stats_path, index=False)
+        logger.info(f"Topic statistics saved to {topic_stats_path}.")
+
+        stats_map = topic_stats_df.set_index(topic_column)
+        global_stats = stats_map.loc['__GLOBAL__']
+        for stat_col in ['call_TOPIC_AVG_TMC', 'call_TOPIC_AVG_FTR', 'call_TOPIC_AVG_OT', 'call_TOPIC_COUNT']:
+            mapped = full_merged_df[topic_column].map(stats_map[stat_col])
+            full_merged_df[stat_col] = mapped.fillna(global_stats[stat_col])
+    else:
+        logger.warning(f"Column '{topic_column}' not found; topic-level averages will be unavailable.")
 
     # --- Time-based & Other Engineered Features ---
     # Main call time reference (unprefixed, as excluded from prefixing in merger)
@@ -537,7 +647,46 @@ def run_modelling(df_input: pd.DataFrame, gcs_unique_input: pd.DataFrame) -> dic
     cols_for_final_df = list(dict.fromkeys(cols_for_final_df)) # Unique
     
     final_df = full_merged_df[cols_for_final_df].copy()
+
+    print("\n[DIAGNOSTIC CHECK 2: POST-CLEANING]")
+    print("OT target distribution just before train/test split:")
+    print(final_df[TARGET_OT].value_counts(normalize=True, dropna=False))
+
+    print("\n[DIAGNOSTIC CHECK] Checking raw OT target distribution...")
+    ot_target_col = 'call_FLAG_OT'
+    if ot_target_col in final_df.columns:
+        print(final_df[ot_target_col].value_counts(normalize=True))
+    else:
+        print(f"!!! ERROR: OT Target column '{ot_target_col}' not found in data.")
     
+    print("\n[DIAGNOSTIC CHECK 2.5: ANALYZING NANS PRE-DROPNA]")
+    ot_target_col = TARGET_OT
+    nan_summary = final_df.isnull().groupby(final_df[ot_target_col]).mean()
+    if 0 in nan_summary.index and 1 in nan_summary.index:
+        nan_diff = nan_summary.loc[0] - nan_summary.loc[1]
+        culprit_cols = nan_diff[nan_diff > 0.5].index.tolist()
+        if culprit_cols:
+            print("!!! POTENTIAL CULPRIT COLUMNS FOUND (High NaN % in OT=0 rows):")
+            print(culprit_cols)
+            print("\nNaN Rates (0 = OT=0, 1 = OT=1):")
+            print(nan_summary.loc[[0, 1], culprit_cols].T)
+        else:
+            print("No obvious single culprit column found. Printing full NaN summary for manual inspection...")
+            print(nan_summary.T)
+    else:
+        print("Insufficient class variety (either OT=0 or OT=1 missing) for NaN analysis.")
+    print("--- [End of NaN Diagnostic] ---")
+
+    print("\n[PIPELINE FIX] Dropping known leaky OT-related columns *before* dropna()...")
+    LEAKY_OT_COLS_TO_DROP = [
+        'call_TIBCO_DIFFUSION_DAT',
+        'call_WORK_ORDER_ID',
+        'call_WORK_ORDER_SCHEDULE_END_DAT'
+    ]
+    final_df.drop(columns=LEAKY_OT_COLS_TO_DROP, inplace=True, errors='ignore')
+    full_merged_df.drop(columns=LEAKY_OT_COLS_TO_DROP, inplace=True, errors='ignore')
+    print(f"Dropped {len(LEAKY_OT_COLS_TO_DROP)} columns. New data shape: {final_df.shape}")
+
     # Aggressive dropna - review if this is appropriate for your dataset
     rows_before_dropna = len(final_df)
     final_df.dropna(inplace=True) # Drops rows with ANY NaN in selected columns
@@ -560,16 +709,110 @@ def run_modelling(df_input: pd.DataFrame, gcs_unique_input: pd.DataFrame) -> dic
     if actual_categorical_cols_to_encode:
         logger.info(f"One-hot encoding categorical features: {actual_categorical_cols_to_encode}")
         final_df = pd.get_dummies(final_df, columns=actual_categorical_cols_to_encode, drop_first=True, dtype=int)
+
+    non_numeric_feature_cols = final_df.select_dtypes(include=['object']).columns.tolist()
+    if non_numeric_feature_cols:
+        logger.info(f"Dropping non-numeric feature columns prior to modelling: {non_numeric_feature_cols}")
+        final_df.drop(columns=non_numeric_feature_cols, inplace=True, errors='ignore')
     
     final_df.set_index(call_leg_id_col_for_index, inplace=True)
     
     logger.info("Modelling Data Preparation Finished.")
 
-    # --- 2. Define features X and targets y from final_df ---
-    X = final_df.drop(columns=[TARGET_TMC, TARGET_FTR, TARGET_OT], errors='ignore')
-    y_tmc = final_df[TARGET_TMC]
-    y_ftr = final_df[TARGET_FTR]
-    y_ot = final_df[TARGET_OT]
+    print("\n--- [STARTING DATA SPLIT] ---")
+
+    TARGET_TMC = 'TMC_dependent'
+    TARGET_FTR = 'FTR_dependent'
+    TARGET_OT = 'OT_dependent'
+
+    ALL_COLS_TO_DROP_FROM_X = [
+        TARGET_TMC,
+        TARGET_FTR,
+        TARGET_OT,
+        'call_LEG_DURATION_SEC_QTY',
+        'call_FLAG_OT',
+        'call_FTR_depen',
+        'call_FTR_1_SUM',
+        'call_CALL_DURATION_SEQ_QTY',
+        'call_FTR_Actual_1',
+        'call_FTR_CALCULATED',
+        'call_TIBCO_DIFFUSION_DAT',
+        'call_WORK_ORDER_ID',
+        'call_WORK_ORDER_SCHEDULE_END_DAT'
+    ]
+
+    split_df = final_df.reset_index(drop=True).copy()
+
+    y = split_df[[TARGET_TMC, TARGET_FTR, TARGET_OT]].copy()
+    X = split_df.drop(columns=y.columns.tolist() + ALL_COLS_TO_DROP_FROM_X, errors='ignore')
+
+    print("\n[DIAGNOSTIC CHECK 2.8: FINAL LEAKAGE CHECK]")
+    leaky_cols_found = [col for col in X.columns if col in ALL_COLS_TO_DROP_FROM_X]
+    if leaky_cols_found:
+        print(f"!!! CRITICAL ERROR: LEAKAGE STILL PRESENT IN X: {leaky_cols_found} !!!")
+        exit(1)
+    else:
+        print("...[DIAGNOSTIC CHECK 2.8] Passed. X matrix is clean.")
+
+    print("[SPLIT CHECK] Performing stratified train_test_split on OT target...")
+    try:
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y,
+            test_size=0.2,
+            random_state=42,
+            stratify=y[TARGET_OT]
+        )
+    except ValueError as e:
+        print("!!! CRITICAL ERROR: Stratification failed. This can happen if a class has only 1 member. !!!")
+        print(f"Error: {e}")
+        print("Aborting.")
+        exit(1)
+
+    print("\n[DIAGNOSTIC CHECK 3: POST-SPLIT]")
+    print("OT target distribution in the new *TRAINING* set (y_train):")
+    print(y_train[TARGET_OT].value_counts(normalize=True))
+    print("OT target distribution in the new *TEST* set (y_test):")
+    print(y_test[TARGET_OT].value_counts(normalize=True))
+    print("--- [DATA SPLIT COMPLETE] ---")
+
+    print("\n[DIAGNOSTIC CHECK] Verifying no data leakage...")
+    KNOWN_LEAKS = [
+        TARGET_TMC,
+        TARGET_FTR,
+        TARGET_OT,
+        'call_FTR_1_SUM',
+        'call_CALL_DURATION_SEQ_QTY',
+        'call_FTR_Actual_1',
+        'call_FTR_CALCULATED'
+    ]
+    current_features = X.columns.tolist()
+    leaky_cols_found = [col for col in current_features if col in KNOWN_LEAKS]
+
+    if leaky_cols_found:
+        print("!!! CRITICAL ERROR: Data leakage detected! !!!")
+        print("The following target-related columns were found in the X features:")
+        for col in leaky_cols_found:
+            print(f"  - {col}")
+        print("Aborting training. Please fix the feature DataFrame (X) definition.")
+        exit(1)
+    else:
+        print("...[DIAGNOSTIC CHECK] Passed. No data leakage detected.")
+        print(f"Total features being sent to models: {len(current_features)}")
+
+    X_train_tmc = X_train.copy()
+    X_test_tmc = X_test.copy()
+    y_train_tmc = y_train[TARGET_TMC]
+    y_test_tmc = y_test[TARGET_TMC]
+
+    X_train_ftr = X_train.copy()
+    X_test_ftr = X_test.copy()
+    y_train_ftr = y_train[TARGET_FTR]
+    y_test_ftr = y_test[TARGET_FTR]
+
+    X_train_ot = X_train.copy()
+    X_test_ot = X_test.copy()
+    y_train_ot = y_train[TARGET_OT]
+    y_test_ot = y_test[TARGET_OT]
 
     # Define binary prefixes and specific binary columns for scaling exclusion
     # These should align with prefixes from OHE and known binary flags in X.
@@ -594,20 +837,26 @@ def run_modelling(df_input: pd.DataFrame, gcs_unique_input: pd.DataFrame) -> dic
     specific_binary_cols_for_scaling = sorted(list(set(specific_binary_cols_for_scaling))) # Unique and sorted
 
     # --- Model Training Parameters (can be moved to settings.py) ---
-    xgb_common_params = {'random_state': 42, 'n_jobs': -1, 'objective': 'reg:squarederror'} # Default objective for regressor
+    xgb_common_params = {'random_state': 42, 'n_jobs': -1}
 
     # --- TMC Model (XGBoost Regressor) ---
     logger.info("\n--- Training TMC Model (XGBoost Regressor) ---")
-    X_train_tmc, X_test_tmc, y_train_tmc, y_test_tmc = train_test_split(X, y_tmc, test_size=0.2, random_state=42)
-    
     # Scale features for TMC model
     X_train_scaled_tmc, X_test_scaled_tmc, scaler_tmc, scaled_cols_tmc_list = scale_features_df(
         X_train_tmc, X_test_tmc, # Pass copies if original X_train/X_test needed later unscaled
         binary_prefixes_for_scaling, specific_binary_cols_for_scaling, fit_scaler=True
     )
+    # Save TMC scaler after fitting
+    joblib.dump(scaler_tmc, os.path.join(ASSETS_DIR, 'scaler_tmc.joblib'))
+    logger.info(f"TMC scaler saved to {os.path.join(ASSETS_DIR, 'scaler_tmc.joblib')}")
         
-    xgb_tmc_model = xgb.XGBRegressor(learning_rate=0.1, max_depth=4, n_estimators=50, **xgb_common_params)
+    xgb_tmc_model = xgb.XGBRegressor(learning_rate=0.1, max_depth=4, n_estimators=50,
+                                     objective='reg:squarederror', **xgb_common_params)
     xgb_tmc_model.fit(X_train_scaled_tmc, y_train_tmc)
+    # Save TMC model after training
+    joblib.dump(xgb_tmc_model, os.path.join(ASSETS_DIR, 'model_tmc.joblib'))
+    logger.info(f"TMC model saved to {os.path.join(ASSETS_DIR, 'model_tmc.joblib')}")
+    
     y_pred_tmc = xgb_tmc_model.predict(X_test_scaled_tmc)
     tmc_r2 = r2_score(y_test_tmc, y_pred_tmc)
     tmc_rmse = np.sqrt(mean_squared_error(y_test_tmc, y_pred_tmc))
@@ -622,9 +871,10 @@ def run_modelling(df_input: pd.DataFrame, gcs_unique_input: pd.DataFrame) -> dic
 
     # --- FTR Model (XGBoost Classifier) ---
     logger.info("\n--- Training FTR Model (XGBoost Classifier) ---")
-    # Stratify only if there are at least 2 unique values in y_ftr and each class has enough samples for split
-    stratify_ftr = y_ftr if y_ftr.nunique() > 1 and all(y_ftr.value_counts() >= 2) else None
-    X_train_ftr, X_test_ftr, y_train_ftr, y_test_ftr = train_test_split(X, y_ftr, test_size=0.2, random_state=42, stratify=stratify_ftr)
+    X_train_ftr = X_train.copy()
+    X_test_ftr = X_test.copy()
+    y_train_ftr = y_train[TARGET_FTR]
+    y_test_ftr = y_test[TARGET_FTR]
     
     X_train_ftr_processed = X_train_ftr.copy() # Operate on copy for SMOTE
     y_train_ftr_processed = y_train_ftr.copy()
@@ -643,39 +893,70 @@ def run_modelling(df_input: pd.DataFrame, gcs_unique_input: pd.DataFrame) -> dic
         X_train_ftr_processed, X_test_ftr, # Pass copies if needed
         binary_prefixes_for_scaling, specific_binary_cols_for_scaling, fit_scaler=True
     )
+    # Save FTR scaler after fitting
+    joblib.dump(scaler_ftr, os.path.join(ASSETS_DIR, 'scaler_ftr.joblib'))
+    logger.info(f"FTR scaler saved to {os.path.join(ASSETS_DIR, 'scaler_ftr.joblib')}")
         
-    xgb_ftr_model = xgb.XGBClassifier(learning_rate=0.01, max_depth=4, n_estimators=200, 
-                                use_label_encoder=False, eval_metric='logloss', 
-                                objective='binary:logistic', **xgb_common_params)
-    xgb_ftr_model.fit(X_train_scaled_ftr, y_train_ftr_processed)
-    y_prob_ftr = xgb_ftr_model.predict_proba(X_test_scaled_ftr)[:, 1]
-    
-    roc_auc_ftr = roc_auc_score(y_test_ftr, y_prob_ftr) if y_test_ftr.nunique() > 1 else 0.5
-    precisions_ftr, recalls_ftr, thresholds_ftr = precision_recall_curve(y_test_ftr, y_prob_ftr)
-    f1_scores_ftr = np.divide(2 * precisions_ftr * recalls_ftr, precisions_ftr + recalls_ftr, 
-                              out=np.zeros_like(precisions_ftr), where=(precisions_ftr + recalls_ftr) != 0)
-    
-    best_f1_idx_ftr = np.argmax(f1_scores_ftr[:-1]) if len(f1_scores_ftr) > 1 else 0 # Exclude last P/R for threshold array alignment
-    best_thresh_ftr = thresholds_ftr[best_f1_idx_ftr] if len(thresholds_ftr) > 0 and len(f1_scores_ftr) > 1 else 0.5
-    
-    y_pred_ftr_thresh = (y_prob_ftr >= best_thresh_ftr).astype(int)
-    f1_ftr_val = f1_score(y_test_ftr, y_pred_ftr_thresh, zero_division=0)
-    precision_ftr_val = precision_score(y_test_ftr, y_pred_ftr_thresh, zero_division=0)
-    recall_ftr_val = recall_score(y_test_ftr, y_pred_ftr_thresh, zero_division=0)
-    
-    logger.info(f"FTR Model - ROC AUC: {roc_auc_ftr:.4f}, Best F1 Thresh: {best_thresh_ftr:.2f}")
-    logger.info(f"FTR Model - Metrics @ Best Thresh: Precision: {precision_ftr_val:.4f}, Recall: {recall_ftr_val:.4f}, F1: {f1_ftr_val:.4f}")
+    can_train_ftr = y_train_ftr_processed.nunique() > 1 and y_test_ftr.nunique() > 1
+    if can_train_ftr:
+        neg_ftr = float((y_train_ftr_processed == 0).sum())
+        pos_ftr = float((y_train_ftr_processed == 1).sum())
+        scale_pos_weight_ftr = neg_ftr / pos_ftr if pos_ftr > 0 else 1.0
+        xgb_ftr_model = xgb.XGBClassifier(
+            learning_rate=0.01,
+            max_depth=4,
+            n_estimators=200,
+            use_label_encoder=False,
+            eval_metric='logloss',
+            objective='binary:logistic',
+            scale_pos_weight=scale_pos_weight_ftr,
+            **xgb_common_params
+        )
+        xgb_ftr_model.fit(X_train_scaled_ftr, y_train_ftr_processed)
+        y_prob_ftr = xgb_ftr_model.predict_proba(X_test_scaled_ftr)[:, 1]
+
+        roc_auc_ftr = roc_auc_score(y_test_ftr, y_prob_ftr) if y_test_ftr.nunique() > 1 else float('nan')
+        precisions_ftr, recalls_ftr, thresholds_ftr = precision_recall_curve(y_test_ftr, y_prob_ftr)
+        f1_scores_ftr = np.divide(2 * precisions_ftr * recalls_ftr, precisions_ftr + recalls_ftr,
+                                  out=np.zeros_like(precisions_ftr), where=(precisions_ftr + recalls_ftr) != 0)
+
+        best_f1_idx_ftr = np.argmax(f1_scores_ftr[:-1]) if len(f1_scores_ftr) > 1 else 0
+        best_thresh_ftr = thresholds_ftr[best_f1_idx_ftr] if len(thresholds_ftr) > 0 and len(f1_scores_ftr) > 1 else 0.5
+
+        y_pred_ftr_thresh = (y_prob_ftr >= best_thresh_ftr).astype(int)
+        f1_ftr_val = f1_score(y_test_ftr, y_pred_ftr_thresh, zero_division=0)
+        precision_ftr_val = precision_score(y_test_ftr, y_pred_ftr_thresh, zero_division=0)
+        recall_ftr_val = recall_score(y_test_ftr, y_pred_ftr_thresh, zero_division=0)
+
+        logger.info(f"FTR Model - ROC AUC: {roc_auc_ftr:.4f}, Best F1 Thresh: {best_thresh_ftr:.2f}")
+        logger.info(f"FTR Model - Metrics @ Best Thresh: Precision: {precision_ftr_val:.4f}, Recall: {recall_ftr_val:.4f}, F1: {f1_ftr_val:.4f}")
+    else:
+        logger.warning("FTR training skipped due to single-class target. Falling back to DummyClassifier.")
+        constant_class_ftr = int(y_train_ftr_processed.iloc[0]) if not y_train_ftr_processed.empty else 0
+        xgb_ftr_model = DummyClassifier(strategy='constant', constant=constant_class_ftr)
+        xgb_ftr_model.fit(X_train_scaled_ftr, y_train_ftr_processed)
+        y_prob_ftr = np.full(len(y_test_ftr), constant_class_ftr, dtype=float)
+        roc_auc_ftr = float('nan')
+        best_thresh_ftr = None
+        f1_ftr_val = float('nan')
+        precision_ftr_val = float('nan')
+        recall_ftr_val = float('nan')
+
+    joblib.dump(xgb_ftr_model, os.path.join(ASSETS_DIR, 'model_ftr.joblib'))
+    logger.info(f"FTR model saved to {os.path.join(ASSETS_DIR, 'model_ftr.joblib')}")
     results_dict['ftr'] = {
         'model': xgb_ftr_model, 'scaler': scaler_ftr, 'scaled_cols': scaled_cols_ftr_list,
         'features': X_train_scaled_ftr.columns.tolist(),
-        'metrics': {'ROC_AUC': roc_auc_ftr, 'F1': f1_ftr_val, 'Precision': precision_ftr_val, 
+        'metrics': {'ROC_AUC': roc_auc_ftr, 'F1': f1_ftr_val, 'Precision': precision_ftr_val,
                     'Recall': recall_ftr_val, 'Best_Threshold': best_thresh_ftr}
     }
 
     # --- OT Model (XGBoost Classifier) --- (Similar structure to FTR model)
     logger.info("\n--- Training OT Model (XGBoost Classifier) ---")
-    stratify_ot = y_ot if y_ot.nunique() > 1 and all(y_ot.value_counts() >= 2) else None
-    X_train_ot, X_test_ot, y_train_ot, y_test_ot = train_test_split(X, y_ot, test_size=0.2, random_state=42, stratify=stratify_ot)
+    X_train_ot = X_train.copy()
+    X_test_ot = X_test.copy()
+    y_train_ot = y_train[TARGET_OT]
+    y_test_ot = y_test[TARGET_OT]
     
     X_train_ot_processed = X_train_ot.copy()
     y_train_ot_processed = y_train_ot.copy()
@@ -693,33 +974,72 @@ def run_modelling(df_input: pd.DataFrame, gcs_unique_input: pd.DataFrame) -> dic
         X_train_ot_processed, X_test_ot, # Pass copies if needed
         binary_prefixes_for_scaling, specific_binary_cols_for_scaling, fit_scaler=True
     )
-    xgb_ot_model = xgb.XGBClassifier(learning_rate=0.1, max_depth=4, n_estimators=100,
-                               use_label_encoder=False, eval_metric='logloss', 
-                               objective='binary:logistic', **xgb_common_params)
-    xgb_ot_model.fit(X_train_scaled_ot, y_train_ot_processed)
-    y_prob_ot = xgb_ot_model.predict_proba(X_test_scaled_ot)[:, 1]
-    
-    roc_auc_ot = roc_auc_score(y_test_ot, y_prob_ot) if y_test_ot.nunique() > 1 else 0.5
-    precisions_ot, recalls_ot, thresholds_ot = precision_recall_curve(y_test_ot, y_prob_ot)
-    f1_scores_ot = np.divide(2 * precisions_ot * recalls_ot, precisions_ot + recalls_ot, 
-                             out=np.zeros_like(precisions_ot), where=(precisions_ot + recalls_ot) != 0)
-    
-    best_f1_idx_ot = np.argmax(f1_scores_ot[:-1]) if len(f1_scores_ot) > 1 else 0
-    best_thresh_ot = thresholds_ot[best_f1_idx_ot] if len(thresholds_ot) > 0 and len(f1_scores_ot) > 1 else 0.5
-    
-    y_pred_ot_thresh = (y_prob_ot >= best_thresh_ot).astype(int)
-    f1_ot_val = f1_score(y_test_ot, y_pred_ot_thresh, zero_division=0)
-    precision_ot_val = precision_score(y_test_ot, y_pred_ot_thresh, zero_division=0)
-    recall_ot_val = recall_score(y_test_ot, y_pred_ot_thresh, zero_division=0)
-    
-    logger.info(f"OT Model - ROC AUC: {roc_auc_ot:.4f}, Best F1 Thresh: {best_thresh_ot:.2f}")
-    logger.info(f"OT Model - Metrics @ Best Thresh: Precision: {precision_ot_val:.4f}, Recall: {recall_ot_val:.4f}, F1: {f1_ot_val:.4f}")
+    # Save OT scaler after fitting
+    joblib.dump(scaler_ot, os.path.join(ASSETS_DIR, 'scaler_ot.joblib'))
+    logger.info(f"OT scaler saved to {os.path.join(ASSETS_DIR, 'scaler_ot.joblib')}")
+    can_train_ot = y_train_ot_processed.nunique() > 1 and y_test_ot.nunique() > 1
+    if can_train_ot:
+        neg_ot = float((y_train_ot_processed == 0).sum())
+        pos_ot = float((y_train_ot_processed == 1).sum())
+        scale_pos_weight_ot = neg_ot / pos_ot if pos_ot > 0 else 1.0
+        xgb_ot_model = xgb.XGBClassifier(
+            learning_rate=0.1,
+            max_depth=4,
+            n_estimators=100,
+            use_label_encoder=False,
+            eval_metric='logloss',
+            objective='binary:logistic',
+            scale_pos_weight=scale_pos_weight_ot,
+            **xgb_common_params
+        )
+        xgb_ot_model.fit(X_train_scaled_ot, y_train_ot_processed)
+        y_prob_ot = xgb_ot_model.predict_proba(X_test_scaled_ot)[:, 1]
+
+        roc_auc_ot = roc_auc_score(y_test_ot, y_prob_ot) if y_test_ot.nunique() > 1 else float('nan')
+        precisions_ot, recalls_ot, thresholds_ot = precision_recall_curve(y_test_ot, y_prob_ot)
+        f1_scores_ot = np.divide(2 * precisions_ot * recalls_ot, precisions_ot + recalls_ot,
+                                 out=np.zeros_like(precisions_ot), where=(precisions_ot + recalls_ot) != 0)
+
+        best_f1_idx_ot = np.argmax(f1_scores_ot[:-1]) if len(f1_scores_ot) > 1 else 0
+        best_thresh_ot = thresholds_ot[best_f1_idx_ot] if len(thresholds_ot) > 0 and len(f1_scores_ot) > 1 else 0.5
+
+        y_pred_ot_thresh = (y_prob_ot >= best_thresh_ot).astype(int)
+        f1_ot_val = f1_score(y_test_ot, y_pred_ot_thresh, zero_division=0)
+        precision_ot_val = precision_score(y_test_ot, y_pred_ot_thresh, zero_division=0)
+        recall_ot_val = recall_score(y_test_ot, y_pred_ot_thresh, zero_division=0)
+
+        logger.info(f"OT Model - ROC AUC: {roc_auc_ot:.4f}, Best F1 Thresh: {best_thresh_ot:.2f}")
+        logger.info(f"OT Model - Metrics @ Best Thresh: Precision: {precision_ot_val:.4f}, Recall: {recall_ot_val:.4f}, F1: {f1_ot_val:.4f}")
+    else:
+        logger.warning("OT training skipped due to single-class target. Falling back to DummyClassifier.")
+        constant_class_ot = int(y_train_ot_processed.iloc[0]) if not y_train_ot_processed.empty else 0
+        xgb_ot_model = DummyClassifier(strategy='constant', constant=constant_class_ot)
+        xgb_ot_model.fit(X_train_scaled_ot, y_train_ot_processed)
+        y_prob_ot = np.full(len(y_test_ot), constant_class_ot, dtype=float)
+        roc_auc_ot = float('nan')
+        best_thresh_ot = None
+        f1_ot_val = float('nan')
+        precision_ot_val = float('nan')
+        recall_ot_val = float('nan')
+
+    joblib.dump(xgb_ot_model, os.path.join(ASSETS_DIR, 'model_ot.joblib'))
+    logger.info(f"OT model saved to {os.path.join(ASSETS_DIR, 'model_ot.joblib')}")
     results_dict['ot'] = {
         'model': xgb_ot_model, 'scaler': scaler_ot, 'scaled_cols': scaled_cols_ot_list,
         'features': X_train_scaled_ot.columns.tolist(),
-        'metrics': {'ROC_AUC': roc_auc_ot, 'F1': f1_ot_val, 'Precision': precision_ot_val, 
+        'metrics': {'ROC_AUC': roc_auc_ot, 'F1': f1_ot_val, 'Precision': precision_ot_val,
                     'Recall': recall_ot_val, 'Best_Threshold': best_thresh_ot}
     }
+    
+    # Save feature lists after all models are trained
+    feature_lists = {
+        'tmc': X_train_scaled_tmc.columns.tolist(),
+        'ftr': X_train_scaled_ftr.columns.tolist(),
+        'ot': X_train_scaled_ot.columns.tolist()
+    }
+    with open(os.path.join(ASSETS_DIR, 'feature_lists.json'), 'w') as f:
+        json.dump(feature_lists, f, indent=4)
+    logger.info(f"Feature lists saved to {os.path.join(ASSETS_DIR, 'feature_lists.json')}")
     
     # --- Simulation for GC Selection ---
     logger.info("\n--- Running GC Selection Simulation ---")
