@@ -47,7 +47,10 @@ if not is_available:
 ```
 
 **Impact**:
-- Invalid actions now cost €104.2 (base penalty + idle penalty + wait penalty)
+- Invalid actions now cost €100.7 (base penalty + idle penalty + wait penalty)
+  - **Note**: Originally set to 60s (€104.2), reduced to 10s (€100.7) for better RL learning
+  - 60s was causing episodes to end early (~25-37 calls) due to excessive time burn
+  - 10s maintains strong penalties while allowing ~150-220 calls per episode
 - Time progresses, forcing agents to either select valid agents or lose calls to abandonment
 - Simulation continues properly through the full 8-hour day
 
@@ -96,16 +99,18 @@ With these fixes, the reward structure now properly incentivizes good behavior:
 
 **Invalid Action** (Busy/Off-Shift Agent):
 - Base penalty: €100
-- Idle penalty: 60s × €0.05/s = €3
-- Wait penalty: 60s × €0.02/s = €1.2
-- **Total penalty**: -€104.2 ❌
+- Idle penalty: 10s × €0.05/s = €0.5
+- Wait penalty: 10s × €0.02/s = €0.2
+- **Total penalty**: -€100.7 ❌
 
-**Call Abandonment** (After 600s of invalid actions):
+**Call Abandonment** (After 600s of invalid actions = 60 invalid attempts):
 - Abandonment penalty: €500
 - Accumulated wait penalty: 600s × €0.02/s = €12
 - **Total penalty**: -€512 ❌❌❌
 
-This creates a **clear incentive gradient**: Handle calls successfully (+€190) >> Avoid action >> Invalid action (-€104) >> Let calls abandon (-€512)
+This creates a **clear incentive gradient**: Handle calls successfully (+€190) >> Avoid action >> Invalid action (-€100.7) >> Let calls abandon (-€512)
+
+**Note on Time Penalty Reduction**: Originally set to 60s per invalid action, this was reduced to 10s to prevent episodes from ending prematurely. With 60s, agents making 12-18 invalid actions per call during exploration would exhaust the 8-hour simulation day after only 25-37 calls. The 10s penalty maintains strong cost incentives while allowing agents to get sufficient learning signal (~150-220 calls per episode).
 
 ## What Changed in the Environment Behavior
 
@@ -117,12 +122,12 @@ This creates a **clear incentive gradient**: Handle calls successfully (+€190)
 5. Result: 1-2 calls processed per episode
 
 ### After Fixes:
-1. RL agent selects invalid agent → gets -€104 penalty, time = T + 60s, wait_time = 60s
-2. RL agent selects invalid agent again → gets -€104 penalty, time = T + 120s, wait_time = 120s
-3. ... (continues up to 10 invalid actions)
-4. After 10 invalid actions → wait_time = 600s → call abandons with -€512 penalty
+1. RL agent selects invalid agent → gets -€100.7 penalty, time = T + 10s, wait_time = 10s
+2. RL agent selects invalid agent again → gets -€100.7 penalty, time = T + 20s, wait_time = 20s
+3. ... (continues up to 60 invalid actions before abandonment)
+4. After 60 invalid actions → wait_time = 600s → call abandons with -€512 penalty
 5. Next call arrives, agent forced to learn to select valid agents
-6. Result: ~607 calls processed per episode (full simulation day)
+6. Result: ~150-220 calls per episode during early training → ~607 calls as agents learn valid selections
 
 ## Testing Instructions
 
@@ -215,10 +220,11 @@ python evaluate_policies.py --episodes 10 --include-rl --tag "final_full_trainin
 
 ## Expected Outcomes
 
-### Minimum Success Criteria (Smoke Test):
-- ✅ RL agents process ~607 calls/day (proving the environment is fixed)
-- ✅ RL agents have costs in reasonable range (€8k-€15k)
-- ✅ No more "call dodging" behavior
+### Minimum Success Criteria (Smoke Test - 25k steps):
+- ✅ RL agents process **>100 calls/day** (proving environment forces engagement)
+- ✅ Episodes run for **>500 steps** (not ending prematurely)
+- ✅ Costs may be high (€15k-€25k) due to exploration - this is expected
+- ✅ No more "frozen time" or complete call dodging
 
 ### Ideal Success Criteria (Full Training):
 - 🎯 RL agents match or beat Rule-Based policy (~€9,254/day)
@@ -252,9 +258,38 @@ Even if RL doesn't beat baselines after full training, you now have:
 - Reduce checkpoint frequency with `--checkpoint-freq 100000`
 - Try smaller network architectures (requires modifying `train_rl.py`)
 
+## Iterative Tuning: Learning from Initial Results
+
+### Initial Smoke Test Results (60s penalty):
+- DQN: 25.33 calls/day in ~451 steps
+- PPO: 37.0 calls/day in ~463 steps
+- **Problem**: Episodes ending early due to time exhaustion
+
+### Root Cause Analysis:
+- Agents making 12-18 invalid actions per call during exploration
+- Without action masking, ~250 agent action space means >90% invalid actions during random exploration
+- At 60s per invalid action: 15 attempts × 60s = 900s per call
+- Only ~30 calls fit in 8-hour day before time runs out
+
+### Solution: Reduced Time Penalty
+- Changed from 60s → 10s per invalid action
+- Maintains strong cost penalty (€100.7 vs €100)
+- Allows 6x more attempts per episode
+- Expected improvement: 25-37 calls → 150-220 calls per episode
+
+### Alternative Considered: Action Masking
+Using `sb3-contrib.MaskablePPO` to only allow valid agent selections would be ideal, but requires:
+- Additional dependency (`sb3-contrib`)
+- Environment modification to return action masks
+- Different training algorithm
+
+The 10s penalty fix is simpler and should provide sufficient learning signal for initial results.
+
 ## Files Modified
 
 - ✅ `call_center_env.py` - All three bugs fixed and committed
+- ✅ `train_rl_memory_optimized.py` - Memory-efficient training script
+- ✅ `BUGFIX_SUMMARY.md` - Comprehensive documentation
 
 ## Commit Details
 
