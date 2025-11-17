@@ -208,9 +208,11 @@ class CallCenterEnv(gymnasium.Env):
         current_hour = int((self.current_time % self.simulation_day_length) / 3600)
         rate_per_hour = self.hourly_arrival_rates.get(current_hour, 10) # 10 as default
         rate_per_second = rate_per_hour / 3600
-        
+
         # Sample from an exponential distribution (inter-arrival time of a Poisson process)
-        time_until_next_call = np.random.exponential(1.0 / rate_per_second)
+        # Use self._rng for consistent random number generation
+        rng = getattr(self, "_rng", np.random.default_rng())
+        time_until_next_call = rng.exponential(1.0 / rate_per_second)
         return self.current_time + time_until_next_call
 
     def _sample_call(self):
@@ -496,14 +498,32 @@ class CallCenterEnv(gymnasium.Env):
         is_available = self._get_agent_availability()[chosen_agent_index] == 1.0
 
         if not is_available:
-            reward = -self.invalid_action_penalty
+            # Invalid action: advance time and accumulate wait time
+            # This simulates the call waiting in queue while agent tries again
+            self.current_time += self.invalid_action_wait_seconds
+            self.current_call_wait_time += self.invalid_action_wait_seconds
+
+            # Calculate penalties for invalid action + idle time
+            idle_penalty = self.invalid_action_wait_seconds * self.idle_penalty_per_second
+            wait_penalty = self.invalid_action_wait_seconds * self.wait_penalty_per_second
+            total_penalty = self.invalid_action_penalty + idle_penalty + wait_penalty
+            reward = -total_penalty
+
+            # Check if call should be abandoned after waiting
+            if self.current_call_wait_time >= self.abandonment_threshold:
+                return self._handle_call_abandonment()
+
+            # Check if simulation day has ended
+            done = self.current_time >= self.simulation_day_length
+
             observation = self._get_observation()
             info = {
                 'status': 'invalid_action_agent_busy_or_off_shift',
-                'wait_time': getattr(self, "current_call_wait_time", 0.0),
-                'abandoned_calls': self.abandoned_calls
+                'wait_time': self.current_call_wait_time,
+                'abandoned_calls': self.abandoned_calls,
+                'penalty': total_penalty
             }
-            return observation, reward, False, False, info
+            return observation, reward, done, False, info
 
         # Valid action: handle the call
         pred_tmc, pred_ftr, pred_ot = self._get_oracle_predictions(self.current_call, chosen_agent_key)
