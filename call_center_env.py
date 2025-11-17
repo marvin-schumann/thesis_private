@@ -172,7 +172,7 @@ class CallCenterEnv(gymnasium.Env):
         self.abandonment_threshold = 600.0        # seconds (10 minutes)
         self.abandonment_penalty = 500.0          # € penalty when a call abandons
         self.invalid_action_penalty = 100.0       # base penalty for picking a busy/off agent
-        self.invalid_action_wait_seconds = 60.0   # seconds to advance time on invalid action
+        self.invalid_action_wait_seconds = 10.0   # seconds to advance time on invalid action (reduced from 60 for faster RL learning)
         self.call_completion_bonus = 200.0        # reward for successfully handling a call
         self.abandoned_calls = 0
 
