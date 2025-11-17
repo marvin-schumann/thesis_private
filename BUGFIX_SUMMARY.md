@@ -126,12 +126,31 @@ This creates a **clear incentive gradient**: Handle calls successfully (+€190)
 
 ## Testing Instructions
 
+### Important: Memory-Optimized Training Script
+
+⚠️ **If you see a memory warning like this:**
+```
+UserWarning: This system does not have apparently enough memory to store the complete
+replay buffer 6.89GB > 5.94GB
+```
+
+**Use the memory-optimized script instead:**
+```bash
+python train_rl_memory_optimized.py --quick-smoke --seed 42
+```
+
+This script reduces DQN's replay buffer from 1M to 200K, using ~2GB instead of ~7GB.
+
 ### Step 1: Retrain RL Agents with Fixed Environment
 
-Run a quick smoke test (25k steps each) to verify the fixes work:
-
+**Option A: Standard Training** (if you have 8GB+ RAM available):
 ```bash
 python train_rl.py --quick-smoke --seed 42
+```
+
+**Option B: Memory-Optimized Training** (recommended for systems with <8GB RAM):
+```bash
+python train_rl_memory_optimized.py --quick-smoke --seed 42
 ```
 
 This will train both DQN and PPO for 25,000 timesteps and save models to:
