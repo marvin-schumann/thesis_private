@@ -61,12 +61,19 @@ def evaluate_policy(env, policy, n_episodes: int, base_seed: Optional[int] = Non
     """
 
     is_sb3_model = hasattr(policy, 'predict')
+    # Check if this is a maskable model (requires action masks)
+    is_maskable = SB3_CONTRIB_AVAILABLE and isinstance(policy, MaskablePPO)
+    # Check if environment supports action masking
+    env_has_masking = hasattr(env, 'action_masks')
 
     total_rewards = []
     total_costs = []
     total_calls_handled = []
 
     print(f"  > Running evaluation for {n_episodes} episodes...")
+    if is_maskable and env_has_masking:
+        print(f"  > Using action masking during evaluation")
+
     for episode in range(n_episodes):
         current_seed = None
         if base_seed is not None:
@@ -88,7 +95,12 @@ def evaluate_policy(env, policy, n_episodes: int, base_seed: Optional[int] = Non
 
         while not done:
             if is_sb3_model:
-                action, _states = policy.predict(obs, deterministic=True)
+                if is_maskable and env_has_masking:
+                    # Get action masks from environment
+                    action_masks = env.action_masks()
+                    action, _states = policy.predict(obs, action_masks=action_masks, deterministic=True)
+                else:
+                    action, _states = policy.predict(obs, deterministic=True)
             else:
                 action = policy(obs)
 
@@ -165,12 +177,6 @@ def load_masked_rl_models(include: bool, env) -> Dict[str, object]:
             print("  ▸ Skipping masked models: sb3-contrib not installed")
         return rl_policies
 
-    # Wrap environment with ActionMasker for evaluation
-    def mask_fn(e):
-        return e.action_masks()
-
-    wrapped_env = ActionMasker(env, mask_fn)
-
     rl_paths = [
         ("6. PPO-Masked (RL Agent)", os.path.join(ASSETS_DIR, 'rl_model_ppo_masked.zip'), MaskablePPO),
     ]
@@ -181,9 +187,9 @@ def load_masked_rl_models(include: bool, env) -> Dict[str, object]:
             continue
         try:
             model = cls.load(path, device="auto")
-            model.set_env(wrapped_env)
+            # No need to set_env - evaluate_policy will handle action masking
             rl_policies[name] = model
-            print(f"  ▸ Loaded {name} from {path}")
+            print(f"  ▸ Loaded {name} from {path} (action masking will be used during evaluation)")
         except Exception as exc:
             print(f"  ▸ Failed to load {name} ({exc}). Skipping.")
     return rl_policies
