@@ -13,6 +13,15 @@ from stable_baselines3 import DQN, PPO
 from call_center_env import CallCenterEnv
 from baseline_policies import BaselinePolicies
 
+# Import masked environment and algorithms (if available)
+try:
+    from call_center_env_masked import CallCenterEnvMasked
+    from sb3_contrib import MaskablePPO
+    from sb3_contrib.common.wrappers import ActionMasker
+    SB3_CONTRIB_AVAILABLE = True
+except ImportError:
+    SB3_CONTRIB_AVAILABLE = False
+
 # --- 1. Configuration ---
 DATA_PATH = '/Users/marvinschumann/Library/CloudStorage/OneDrive-SharedLibraries-NovaSBE/PBL - NOS (Consultants) - General/03 Data/01 Full Datasets/Cleaned Data/07052025/full_merged_df.csv'
 ASSETS_DIR = 'models'
@@ -28,6 +37,8 @@ def parse_args() -> argparse.Namespace:
                         help="Base seed to synchronise call sequences.")
     parser.add_argument("--include-rl", action="store_true",
                         help="Include trained RL models (DQN/PPO) if their .zip files exist.")
+    parser.add_argument("--include-rl-masked", action="store_true",
+                        help="Include trained RL models with action masking (MaskablePPO).")
     parser.add_argument("--skip-random", action="store_true",
                         help="Skip the random baseline.")
     parser.add_argument("--skip-rule", action="store_true",
@@ -146,15 +157,58 @@ def load_rl_models(include: bool, env) -> Dict[str, object]:
     return rl_policies
 
 
+def load_masked_rl_models(include: bool, env) -> Dict[str, object]:
+    """Load RL models trained with action masking."""
+    rl_policies: Dict[str, object] = {}
+    if not include or not SB3_CONTRIB_AVAILABLE:
+        if include and not SB3_CONTRIB_AVAILABLE:
+            print("  ▸ Skipping masked models: sb3-contrib not installed")
+        return rl_policies
+
+    # Wrap environment with ActionMasker for evaluation
+    def mask_fn(e):
+        return e.action_masks()
+
+    wrapped_env = ActionMasker(env, mask_fn)
+
+    rl_paths = [
+        ("6. PPO-Masked (RL Agent)", os.path.join(ASSETS_DIR, 'rl_model_ppo_masked.zip'), MaskablePPO),
+    ]
+
+    for name, path, cls in rl_paths:
+        if not os.path.exists(path):
+            print(f"  ▸ Skipping {name}: model file not found at {path}")
+            continue
+        try:
+            model = cls.load(path, device="auto")
+            model.set_env(wrapped_env)
+            rl_policies[name] = model
+            print(f"  ▸ Loaded {name} from {path}")
+        except Exception as exc:
+            print(f"  ▸ Failed to load {name} ({exc}). Skipping.")
+    return rl_policies
+
+
 def main():
     args = parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     print("--- Starting Policy Evaluation ---")
 
-    print("Initializing Environment...")
-    env = CallCenterEnv(data_path=DATA_PATH, assets_dir=ASSETS_DIR)
-    print("Environment initialized.")
+    # Determine which environment to use
+    if args.include_rl_masked:
+        print("Initializing Masked Environment...")
+        if SB3_CONTRIB_AVAILABLE:
+            env = CallCenterEnvMasked(data_path=DATA_PATH, assets_dir=ASSETS_DIR)
+            print("Masked environment initialized.")
+        else:
+            print("WARNING: sb3-contrib not installed. Using standard environment.")
+            print("Install with: pip install sb3-contrib")
+            env = CallCenterEnv(data_path=DATA_PATH, assets_dir=ASSETS_DIR)
+    else:
+        print("Initializing Environment...")
+        env = CallCenterEnv(data_path=DATA_PATH, assets_dir=ASSETS_DIR)
+        print("Environment initialized.")
 
     print("Initializing Baseline Policies...")
     baselines = BaselinePolicies(data_path=DATA_PATH, assets_dir=ASSETS_DIR)
@@ -168,6 +222,7 @@ def main():
         policies_to_evaluate["3. Greedy XGBoost"] = baselines.greedy_xgboost_policy
 
     policies_to_evaluate.update(load_rl_models(args.include_rl, env))
+    policies_to_evaluate.update(load_masked_rl_models(args.include_rl_masked, env))
 
     if not policies_to_evaluate:
         print("No policies selected for evaluation. Exiting.")
