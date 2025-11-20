@@ -173,7 +173,7 @@ class CallCenterEnv(gymnasium.Env):
         self.abandonment_penalty = 500.0          # € penalty when a call abandons
         self.invalid_action_penalty = 100.0       # base penalty for picking a busy/off agent
         self.invalid_action_wait_seconds = 60.0   # seconds to advance time on invalid action
-        self.call_completion_bonus = 200.0        # reward for successfully handling a call
+        # self.call_completion_bonus = 200.0      # REMOVED: Reward is now pure cost minimization (-cost)
         self.abandoned_calls = 0
 
     def _augment_call_features_with_topic_stats(self):
@@ -529,7 +529,7 @@ class CallCenterEnv(gymnasium.Env):
         # Valid action: handle the call
         pred_tmc, pred_ftr, pred_ot = self._get_oracle_predictions(self.current_call, chosen_agent_key)
         cost = self._calculate_cost(pred_tmc, pred_ftr, pred_ot)
-        reward = -cost + self.call_completion_bonus
+        reward = -cost  # Pure cost minimization (no bonus)
         wait_time_served = getattr(self, "current_call_wait_time", 0.0)
 
         self.agent_available_at[chosen_agent_key] = self.current_time + pred_tmc
