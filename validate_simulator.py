@@ -51,6 +51,8 @@ def parse_args():
                         help="Output path for validation results CSV")
     parser.add_argument("--data-path", type=str, default=DATA_PATH,
                         help="Path to merged dataset CSV")
+    parser.add_argument("--no-residuals", action="store_true",
+                        help="Disable residual bias corrections (test raw model predictions)")
     return parser.parse_args()
 
 
@@ -110,7 +112,7 @@ def build_feature_vector(call_data, agent_data, feature_list):
     return feature_values.to_frame().T.astype(np.float32)
 
 
-def predict_with_simulator(call_data, agent_data, models, scalers, feature_lists, residual_adjuster, agent_key, topic_value):
+def predict_with_simulator(call_data, agent_data, models, scalers, feature_lists, residual_adjuster, agent_key, topic_value, apply_residuals=True):
     """Use the simulator to predict TMC, FTR, OT for a given call-agent pair."""
 
     # TMC prediction
@@ -140,7 +142,7 @@ def predict_with_simulator(call_data, agent_data, models, scalers, feature_lists
     pred_ot_prob = float(ot_proba[1]) if len(ot_proba) == 2 else float(ot_proba[0])
 
     # Apply residual bias correction (without stochastic noise for validation)
-    if residual_adjuster is not None:
+    if apply_residuals and residual_adjuster is not None:
         adjustments = residual_adjuster.get_adjustments(agent_key, topic_value)
         pred_tmc += adjustments['tmc'].bias
         pred_ftr_prob += adjustments['ftr'].bias
@@ -154,7 +156,7 @@ def predict_with_simulator(call_data, agent_data, models, scalers, feature_lists
     return pred_tmc, pred_ftr_prob, pred_ot_prob
 
 
-def validate_simulator(data_path, sample_size, output_path):
+def validate_simulator(data_path, sample_size, output_path, apply_residuals=True):
     """Main validation function."""
 
     print("="*60)
@@ -163,6 +165,7 @@ def validate_simulator(data_path, sample_size, output_path):
     print(f"Data path: {data_path}")
     print(f"Sample size: {sample_size}")
     print(f"Output path: {output_path}")
+    print(f"Residual adjustments: {'ENABLED' if apply_residuals else 'DISABLED'}")
     print()
 
     # Load models
@@ -260,7 +263,7 @@ def validate_simulator(data_path, sample_size, output_path):
             # Predict with simulator
             pred_tmc, pred_ftr, pred_ot = predict_with_simulator(
                 call_data, agent_data, models, scalers, feature_lists,
-                residual_adjuster, agent_key, topic_value
+                residual_adjuster, agent_key, topic_value, apply_residuals
             )
 
             # Get actual values
@@ -458,7 +461,7 @@ def main():
         print("Please provide a valid data path with --data-path")
         sys.exit(1)
 
-    validate_simulator(args.data_path, args.sample_size, args.output_path)
+    validate_simulator(args.data_path, args.sample_size, args.output_path, apply_residuals=not args.no_residuals)
 
 
 if __name__ == '__main__':
