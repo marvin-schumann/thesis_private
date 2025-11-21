@@ -21,10 +21,15 @@ class CallCenterEnv(gymnasium.Env):
     A 1D vector containing:
     1.  Call Features: A flattened vector of the current call's features.
     2.  Agent Availability: A binary vector (1=free, 0=busy) for all agents.
-    3.  Queue/Time Features: `[queue_length, current_hour_of_day]`
+    3.  Temporal Features: `[calls_in_system, current_hour_of_day]`
+        - calls_in_system: Always 1 (single call being routed, no backlog queue)
+        - current_hour_of_day: Current hour within the 8-hour operational period
 
     **Action:**
     A discrete integer representing the *index* of the chosen agent from `self.agent_keys`.
+
+    **Note:** This environment does NOT model queueing dynamics or call prioritization.
+    Calls are processed one-at-a-time in the order they arrive (simulated via Poisson process).
     """
     
     def __init__(self, data_path, assets_dir='models'):
@@ -145,12 +150,12 @@ class CallCenterEnv(gymnasium.Env):
         # Action: Choose one agent (by index)
         self.action_space = spaces.Discrete(self.num_agents)
         
-        # Observation Space: [call_features, agent_availability, queue_features]
+        # Observation Space: [call_features, agent_availability, temporal_features]
         call_features_len = len(self.all_call_features)
         agent_status_len = self.num_agents
-        queue_features_len = 2 # [queue_length, current_hour_of_day]
-        
-        obs_space_len = call_features_len + agent_status_len + queue_features_len
+        temporal_features_len = 2  # [calls_in_system, current_hour_of_day]
+
+        obs_space_len = call_features_len + agent_status_len + temporal_features_len
         
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(obs_space_len,), dtype=np.float32
@@ -312,19 +317,18 @@ class CallCenterEnv(gymnasium.Env):
         
         # 2. Agent Availability
         agent_availability_vector = self._get_agent_availability()
-        
-        # 3. Queue/Time Features
-        # For simplicity, we assume a queue of 1 (the current call)
-        # and no other calls are waiting. This can be expanded later.
-        queue_length = 1.0 
+
+        # 3. Temporal Features
+        # Single call being routed (no backlog queue in this implementation)
+        calls_in_system = 1.0
         current_hour = (self.current_time % self.simulation_day_length) / 3600.0
-        queue_features_vector = np.array([queue_length, current_hour], dtype=np.float32)
-        
+        temporal_features = np.array([calls_in_system, current_hour], dtype=np.float32)
+
         # Concatenate all parts into one flat vector
         observation = np.concatenate([
             call_features_vector,
             agent_availability_vector,
-            queue_features_vector
+            temporal_features
         ])
         
         # Replace any NaN or Inf values with 0.0

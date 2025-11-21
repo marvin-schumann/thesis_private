@@ -89,6 +89,9 @@ def train_dqn_memory_optimized(env, timesteps: int, callback: Optional[Checkpoin
         target_update_interval=500,
         # Keep other defaults
         learning_rate=1e-4,
+        # Discount factor γ = 0.99
+        # With ~600 calls/day, this gives effective horizon of 100 steps (1/(1-γ))
+        # Balances immediate costs with medium-term agent availability planning
         gamma=0.99,
         exploration_fraction=0.1,
         exploration_initial_eps=1.0,
@@ -120,12 +123,17 @@ def train_ppo(env, timesteps: int, callback: Optional[CheckpointCallback],
     Train PPO (no memory issues since it doesn't use replay buffer).
     """
     start_time = time.time()
+
+    # Discount factor γ = 0.99 (Stable-Baselines3 default for PPO)
+    # Same justification as DQN: effective horizon of ~100 steps balances
+    # immediate routing decisions with medium-term agent availability
     model = PPO(
         "MlpPolicy",
         env,
         verbose=verbose,
         tensorboard_log=tensorboard_path,
         device=device,
+        # gamma=0.99,  # Using default
     )
 
     learn_kwargs = {

@@ -65,12 +65,19 @@ def make_callback(save_path: str, checkpoint_freq: int, prefix: str) -> Optional
 def train_agent(model_cls, env, timesteps: int, callback: Optional[CheckpointCallback], save_path: str,
                 tensorboard_path: Optional[str], verbose: int = 1, device: str = "auto") -> float:
     start_time = time.time()
+
+    # Discount factor γ = 0.99 (Stable-Baselines3 default)
+    # Justification: With ~600 calls per 8-hour day, rewards 100 steps away are
+    # weighted at 0.99^100 ≈ 0.37. This reflects operational reality: immediate
+    # routing decisions matter more than distant future states, but we still
+    # consider medium-term consequences. Effective horizon: 1/(1-γ) ≈ 100 steps.
     model = model_cls(
         "MlpPolicy",
         env,
         verbose=verbose,
         tensorboard_log=tensorboard_path,
         device=device,
+        # gamma=0.99,  # Using default (explicitly: gamma is 0.99 for both DQN and PPO)
     )
     learn_kwargs = {
         "total_timesteps": timesteps,
