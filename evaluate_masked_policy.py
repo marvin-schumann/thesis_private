@@ -57,7 +57,7 @@ def evaluate_episode(env, model, episode_num, base_seed):
         action_mask = env.env.action_masks()
         action, _states = model.predict(obs, deterministic=True, action_masks=action_mask)
 
-        obs, reward, done, info = env.step(action)
+        obs, reward, done, truncated, info = env.step(action)
         step += 1
 
         # Track successful calls

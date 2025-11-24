@@ -151,7 +151,7 @@ def main():
 
     while not done and step < 10000:
         action, _states = model.predict(obs, deterministic=True, action_masks=env.env.action_masks())
-        obs, reward, done, info = env.step(action)
+        obs, reward, done, truncated, info = env.step(action)
         total_reward += reward
         step += 1
 
