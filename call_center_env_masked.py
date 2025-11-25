@@ -32,8 +32,20 @@ class CallCenterEnvMasked(CallCenterEnv):
         Returns:
             np.ndarray: Binary mask where 1 = valid action, 0 = invalid action
                         Shape: (num_agents,)
+
+        Note: MaskablePPO requires at least one valid action. If all agents
+        are unavailable (busy or off-shift), we unmask all agents to allow
+        the RL agent to make a choice (the environment will handle the
+        unavailability by making the agent wait).
         """
-        return self._get_agent_availability()
+        mask = self._get_agent_availability()
+
+        # Safety check: ensure at least one action is valid
+        if np.sum(mask) == 0:
+            # All agents unavailable - unmask all to prevent distribution error
+            mask = np.ones_like(mask)
+
+        return mask
 
     def reset(self, seed=None, options=None):
         """Reset and return initial observation + info with action mask."""
