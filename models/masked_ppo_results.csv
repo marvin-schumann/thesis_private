@@ -1,0 +1,2 @@
+policy,run_timestamp,avg_total_cost_per_day,avg_cost_per_call,avg_reward_per_day,avg_calls_per_day,tag
+MaskablePPO (Action Masked),2025-11-24 16:53:20,10556.300440539042,17.1786825720733,-10556.300440539042,614.5,masked_ppo
