@@ -1,233 +1,416 @@
-# NOS-PBL-DELIVERABLE: Modelling Pipeline
+# Reinforcement Learning for Call Center Routing: Master's Thesis Repository
 
-This repository contains a Python-based modelling pipeline designed to predict telecom customer interaction metrics and simulate optimal resource allocation. The pipeline processes raw data through stages of access, cleaning, merging, and modelling, ultimately training models for Call Time (TMC), First Contact Resolution (FTR), and Work Order (OT) which is an Onsite Technician dispatch, and includes a simulation for cost-optimized Contact Manager (GC) assignment.
+**Author:** Marvin Schumann
+**Institution:** Nova School of Business and Economics
+**Year:** 2025
+
+This repository contains the complete codebase for a master's thesis on applying Reinforcement Learning to optimize call center agent routing, building upon the NOS Project for telecom customer service optimization.
+
+---
 
 ## Table of Contents
 
-1.  [Project Overview](#project-overview)
-2.  [Directory Structure](#directory-structure)
-3.  [Pipeline Stages](#pipeline-stages)
-    *   [Data Access](#data-access)
-    *   [Data Cleaning](#data-cleaning)
-    *   [Data Merging](#data-merging)
-    *   [Modelling](#modelling)
-4.  [Configuration](#configuration)
-5.  [Key Files](#key-files)
-6.  [Setup Instructions](#setup-instructions)
-7.  [Running the Pipeline](#running-the-pipeline)
-8.  [Output](#output)
-9.  [Notebooks](#notebooks)
-10. [License](#license)
+1. [Project Overview](#project-overview)
+2. [Key Results](#key-results)
+3. [Repository Structure](#repository-structure)
+4. [Quick Start](#quick-start)
+5. [RL Experiments](#rl-experiments)
+6. [NOS Project (Base System)](#nos-project-base-system)
+7. [Documentation](#documentation)
+8. [Setup Instructions](#setup-instructions)
+9. [License](#license)
+
+---
 
 ## Project Overview
 
-The core objective of this project is to build an end-to-end data pipeline that:
-*   Ingests raw data related to customer calls, client information, and guidance counselor (GC) performance.
-*   Cleans and preprocesses this data.
-*   Merges disparate data sources into a unified dataset suitable for modelling.
-*   Trains machine learning models to predict:
-    *   **TMC (Call Duration)**: Regression model.
-    *   **FTR (First Contact Resolution)**: Classification model.
-    *   **OT (Work Order)**: Classification model.
-*   Simulates the assignment of incoming calls to GCs to minimize a defined cost function, leveraging the trained models.
+This thesis investigates the application of **Reinforcement Learning (RL)** to optimize call center operations, specifically focusing on **agent routing** - the problem of assigning incoming calls to available agents to minimize operational costs while maintaining service quality.
 
-The pipeline is structured into modular sub-libraries: `data_access`, `data_cleaning`, and `modelling`.
+### Two-Part System
 
-## Directory Structure
+**Part 1: NOS Project (Base System)**
+- **Original Group Project**: Predictive modeling pipeline for telecom call center metrics
+- **Purpose**: Train XGBoost models to predict call duration (TMC), first contact resolution (FTR), and technician dispatches (OT)
+- **Output**: Predictive models used as cost estimators in the RL environment
+
+**Part 2: RL Thesis Work (Individual Contribution)**
+- **Custom Gym Environment**: `CallCenterEnv` simulating agent routing decisions
+- **Action Masking**: Critical constraint enforcement for agent availability
+- **Baseline Policies**: Greedy XGBoost, Rule-Based, Random assignment
+- **RL Algorithms**: Masked PPO (main), DQN (comparative analysis)
+- **Simulator Validation**: Statistical tests confirming environment fidelity
+
+---
+
+## Key Results
+
+### Main Findings
+
+1. **Action Masking is Critical (Algorithm-Independent)**
+   - Unmasked PPO: ~98% invalid actions, <2% efficiency
+   - Unmasked DQN: 89.2% invalid actions, 8% efficiency
+   - Masked PPO: 0% invalid actions, 104% efficiency ✅
+
+2. **MaskablePPO is the Only Viable RL Solution**
+   - Masked PPO: 614.5 calls/day (€16.21/call)
+   - Masked DQN + ActionMasker: 30.6 calls/day (€16.92/call)
+   - Generic wrappers fail with value-based methods
+
+3. **Simulator Noise Affects Learning Quality**
+   - Greedy XGBoost (no learning): €15.06/call
+   - Masked PPO (learned): €16.21/call (+7.6%)
+   - Prediction errors in simulator limit RL performance
+
+### Performance Comparison
+
+| Policy | Calls/Day | Cost/Call | Efficiency | Invalid Actions |
+|--------|-----------|-----------|------------|-----------------|
+| **Baselines** | | | | |
+| Greedy XGBoost | 614.5 | €15.06 | 104% | 0% |
+| Rule-Based | 614.5 | €15.54 | 104% | 0% |
+| Random | 614.5 | €18.18 | 104% | 0% |
+| **Masked RL** | | | | |
+| Masked PPO | 614.5 | €16.21 | 104% | 0% |
+| Masked DQN | 30.6 | €16.92 | 5% | ~95% |
+| **Unmasked RL** | | | | |
+| Unmasked PPO | ~1.3 | N/A | <2% | ~98% |
+| Unmasked DQN | 47.0 | €15.35 | 8% | 89.2% |
+
+---
+
+## Repository Structure
+
 ```
-NOS-PBL-DELIVERABLE/
-├── config/ # Configuration files
-│ ├── .env # Environment variables (e.g., DB credentials - GITIGNORED)
-│ ├── settings.py # Pipeline settings, paths, column names, etc.
-│ └── interim/ # (As per tree; settings.py defines data/interim for outputs)
-├── libPBL2425NovaNOS/ # Core library for the pipeline
-│ ├── init.py
-│ ├── data_access/ # Module for data loading
-│ │ ├── init.py
-│ │ └── loader.py
-│ ├── data_cleaning/ # Module for data cleaning tasks
-│ │ ├── init.py
-│ │ ├── call_cleaner.py
-│ │ ├── client_cleaner.py
-│ │ ├── gc_cleaner.py
-│ │ └── merger.py # Script to merge cleaned datasets
-│ └── modelling/ # Module for model training and simulation
-│ ├── init.py
-│ └── modelling.py
-├── notebooks/ # Jupyter notebooks for exploration, analysis, and testing
-│ ├── 01_Cleaning_and_Modelling.ipynb
-│ ├── 02_Cleaning_and_Pre-Processing.ipynb
-│ ├── 03_Runa_Model_No_10.ipynb
-│ └── 04_Best_Models.ipynb
-├── tests/ # Unit tests for pipeline components
-│ ├── data_access/
-│ ├── data_cleaning/
-│ └── init.py
-├── .gitignore # Specifies intentionally untracked files
-├── run_pipeline.py # Main script to execute the entire pipeline
-├── requirements.txt # Project dependencies
-└── LICENSE # Project license information
+thesis_private/
+│
+├── README.md                          # This file
+├── LICENSE                            # MIT License
+├── requirements.txt                   # Python dependencies
+│
+├── docs/                              # Comprehensive documentation
+│   ├── SYSTEM_VALIDATION_SUMMARY.md   # Final validation report
+│   ├── DQN_EXPERIMENTS_REPORT.md      # DQN analysis
+│   ├── section5_final_results_summary.md
+│   ├── rl_mathematical_formulation.md
+│   ├── rl_validation_findings.md
+│   └── mdp_vs_bandit_justification.md
+│
+├── figures/                           # Publication-quality figures
+│   ├── figure5_1_simulator_validation.png
+│   ├── figure5_2_action_masking_impact.png
+│   ├── figure5_3_policy_performance.png
+│   ├── figure5_4_learning_curve.png
+│   ├── figure5_5_cost_distribution.png
+│   ├── figure5_6_simulator_fidelity.png
+│   └── figure5_7_action_masking_mechanism.png
+│
+├── models/                            # Trained models and results
+│   ├── rl_model_masked_ppo.zip        # Final Masked PPO model
+│   ├── rl_model_dqn_masked.zip        # Masked DQN model
+│   ├── rl_model_dqn_unmasked.zip      # Unmasked DQN model
+│   ├── model_ftr.joblib               # XGBoost FTR predictor
+│   ├── model_ot.joblib                # XGBoost OT predictor
+│   ├── model_tmc.joblib               # XGBoost TMC predictor
+│   ├── final_evaluation_results.csv   # Baseline results
+│   ├── masked_ppo_results.csv         # Masked PPO results
+│   ├── dqn_unmasked_results.csv       # DQN unmasked results
+│   ├── dqn_masked_results.csv         # DQN masked results
+│   └── checkpoints_*/                 # Training checkpoints
+│
+├── config/                            # Configuration
+│   ├── settings.py                    # Pipeline settings
+│   └── .env                           # Database credentials (not in git)
+│
+├── RL Environment & Policies/
+├── call_center_env.py                 # Core RL environment (unmasked)
+├── call_center_env_masked.py          # Action-masked environment
+├── baseline_policies.py               # Greedy, Rule-Based, Random
+│
+├── RL Training Scripts/
+├── train_rl_masked.py                 # Train Masked PPO
+├── train_dqn_unmasked.py              # Train Unmasked DQN
+├── train_dqn_masked.py                # Train Masked DQN
+│
+├── RL Evaluation Scripts/
+├── evaluate_policies.py               # Evaluate all baselines
+├── evaluate_masked_policy.py          # Evaluate Masked PPO
+├── evaluate_dqn_unmasked.py           # Evaluate Unmasked DQN
+├── evaluate_dqn_masked.py             # Evaluate Masked DQN
+│
+├── Validation & Visualization/
+├── validate_simulator.py              # Statistical simulator validation
+├── generate_thesis_figures.py         # Generate publication figures
+│
+├── NOS Project (Original)/
+├── libPBL2425NovaNOS/                 # Core NOS pipeline library
+│   ├── data_access/                   # Database loaders
+│   ├── data_cleaning/                 # Data cleaning modules
+│   └── modelling/                     # XGBoost training
+├── check_feature_importance.py
+├── compute_gc_residuals.py
+├── residual_adjustments.py
+├── run_pipeline.py                    # Run NOS pipeline
+│
+├── notebooks/                         # Jupyter notebooks (exploration)
+└── tests/                             # Unit tests
 ```
 
+---
 
-## Pipeline Stages
+## Quick Start
 
-The pipeline is orchestrated by `run_pipeline.py` and consists of the following stages:
+### 1. Setup Environment
 
-### Data Access
-*   **Module**: `libPBL2425NovaNOS.data_access.loader`
-*   **Script**: `loader.py`
-*   **Functionality**:
-    *   Connects to a PostgreSQL database using credentials and connection details from `config/settings.py` (sourced from `.env`).
-    *   Fetches raw data tables as specified in `settings.RAW_TABLE_NAMES`.
-    *   Concatenates different periods of client data (`settings.MASTER_CLIENT_TABLES_FOR_CONCAT`) and call data (`settings.MASTER_CALL_TABLES_FOR_CONCAT`).
-    *   Outputs three main DataFrames: `clients_df`, `calls_df`, and `gcs_df`.
+```bash
+# Clone repository
+git clone <repository_url>
+cd thesis_private
 
-### Data Cleaning
-This stage involves cleaning the three raw DataFrames.
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-1.  **Call Data Cleaning**:
-    *   **Module**: `libPBL2425NovaNOS.data_cleaning.call_cleaner`
-    *   **Script**: `call_cleaner.py`
-    *   **Functionality**:
-        *   Adds an `FTR_dependent` column.
-        *   Drops specified irrelevant columns.
-        *   Removes rows with any NaN values (Note: To ensure the final dataset is ready for modelling without requiring further imputation, any rows with remaining NaN values after the merges are dropped).
-    *   **Input**: `calls_raw_df`
-    *   **Output**: `calls_cleaned_df`
+# Install dependencies
+pip install -r requirements.txt
+```
 
-2.  **Client Data Cleaning**:
-    *   **Module**: `libPBL2425NovaNOS.data_cleaning.client_cleaner`
-    *   **Script**: `client_cleaner.py`
-    *   **Functionality**: A comprehensive cleaning process involving:
-        *   Age cleaning and imputation.
-        *   Filling NaNs in rolling window metrics.
-        *   Processing call-related features (call count flags, subscription categories, issue proportions).
-        *   Forward-filling characteristic columns and imputing remaining NaNs with -1, adding imputation flags.
-    *   **Input**: `clients_raw_df`
-    *   **Output**: `client_cleaned_df`
+### 2. Run Baseline Evaluation
 
-3.  **GC (Call Manager) Data Cleaning**:
-    *   **Module**: `libPBL2425NovaNOS.data_cleaning.gc_cleaner`
-    *   **Script**: `gc_cleaner.py`
-    *   **Functionality**:
-        *   Removes columns with 'MEDIAN' in their names and other specified columns.
-        *   Calculates `DAYS_ACTIVE` for each GC.
-        *   Aggregates GC data per `RESOURCE_KEY` using mode for defined columns, creating a `gcs_unique` table.
-        *   Creates binary flags for call categories associated with GCs.
-        *   Fills remaining NaNs with 0.
-    *   **Input**: `gcs_raw_df`
-    *   **Output**: `gcs_unique_cleaned_df`
+```bash
+# Evaluate Greedy XGBoost, Rule-Based, and Random policies
+python evaluate_policies.py --episodes 10 --seed 42
+```
 
-### Data Merging
-*   **Module**: `libPBL2425NovaNOS.data_cleaning.merger`
-*   **Script**: `merger.py`
-*   **Functionality**:
-    *   Takes the three cleaned DataFrames (`calls_cleaned_df`, `client_cleaned_df`, `gcs_unique_cleaned_df`).
-    *   Prefixes columns of each DataFrame (e.g., `call_`, `client_`, `gcs_`) to avoid name clashes, excluding key columns.
-    *   Performs a `merge_asof` between call data and client data based on `PERSON_SK` and normalized dates, associating each call with the most recent client snapshot.
-    *   Performs a left merge of the result with GC data on `RESOURCE_KEY`.
-    *   Drops rows with any remaining NaN values (Note: To ensure the final dataset is ready for modelling without requiring further imputation, any rows with remaining NaN values after the merges are dropped).
-    *   Cleans up temporary date columns.
-*   **Input**: `calls_cleaned_df`, `client_cleaned_df`, `gcs_unique_cleaned_df`
-*   **Output**: `final_modelling_df`
+### 3. Train Masked PPO
 
-### Modelling
-*   **Module**: `libPBL2425NovaNOS.modelling.modelling`
-*   **Script**: `modelling.py`
-*   **Functionality**:
-    *   **Feature Engineering**: Creates target variables (`TMC_dependent`, `FTR_dependent`, `OT_dependent`) and various features from `final_modelling_df` (e.g., time-based features, Level 2 topic interaction features, cyclical features).
-    *   **Preprocessing**: Handles categorical features via One-Hot Encoding and scales numerical features using `StandardScaler`.
-    *   **Model Training**:
-        *   Splits data into training and testing sets.
-        *   It applies SMOTE (from \imblearn`) to handle class imbalance** in the FTR and OT classification tasks.
-        *   Trains three separate XGBoost models:
-            *   `XGBRegressor` for TMC (Call Duration).
-            *   `XGBClassifier` for FTR (First Contact Resolution).
-            *   `XGBClassifier` for OT (Work Order).
-    *   **Model Evaluation**: Calculates relevant metrics (R2, RMSE for TMC; ROC AUC, F1-score, Precision, Recall for FTR & OT).
-    *   **GC Assignment Simulation**:
-        *   Takes a sample of calls from the dataset.
-        *   For each call, it iterates through all available GCs (from `gcs_unique_cleaned_df`).
-        *   Predicts TMC, FTR probability, and OT probability for the call if handled by that specific GC.
-        *   Calculates an estimated total cost for handling the call by that GC, considering call duration cost, potential technician visit cost, and potential repeat call cost.
-        *   Identifies the GCs that would result in the lowest predicted cost for each sampled call.
-*   **Input**: `final_modelling_df` (from merger), `gcs_unique_cleaned_df` (from gc_cleaner, for simulation)
-*   **Output**: A dictionary containing trained models, scalers, evaluation metrics, and a DataFrame with simulation results. These are currently kept in memory but can be saved to disk (e.g., using `joblib`).
+```bash
+# Train for 200k timesteps (recommended)
+python train_rl_masked.py --timesteps 200000 --seed 42 --device cpu
+```
 
-## Configuration
+### 4. Evaluate Masked PPO
 
-*   **`config/settings.py`**: This is the central configuration file. It defines:
-    *   Database credentials (loaded from `.env`).
-    *   Database schema and table names.
-    *   Lists of columns for various cleaning and feature engineering steps.
-    *   Logging configuration.
-*   **`config/.env`**: This file (which should be in your `.gitignore`) stores sensitive information like database credentials. Create this file in the `config/` directory based on `.env.example` (if provided, otherwise manually). Example structure:
-    ```
-    DB_HOST="your_db_host"
-    DB_PORT="your_db_port"
-    DB_NAME="your_db_name"
-    DB_USER="your_db_user"
-    DB_PASSWORD="your_db_password"
-    ```
+```bash
+# Evaluate trained Masked PPO model
+python evaluate_masked_policy.py --episodes 10 --seed 42
+```
 
-## Key Files
+### 5. Generate Thesis Figures
 
-*   **`run_pipeline.py`**: The main entry point to execute the entire data pipeline from data extraction to model training and simulation.
-*   **`requirements.txt`**: Lists all Python dependencies required for the project.
-*   **`libPBL2425NovaNOS/`**: The core Python library containing all pipeline logic.
-*   **`notebooks/`**: Contains Jupyter notebooks used for development, experimentation, and detailed analysis.
-*   **`tests/`**: Contains unit tests for various components of the pipeline.
+```bash
+# Generate all publication-quality figures
+python generate_thesis_figures.py
+```
+
+---
+
+## RL Experiments
+
+### Environment: `CallCenterEnv`
+
+**State Space:**
+- Call features: topic, wait time, priority
+- Agent features: availability, skill level, performance history
+- Temporal features: time of day, day of week
+
+**Action Space:**
+- Discrete: Assign call to one of N available agents
+- Constraint: Only available agents (not on call, within shift)
+
+**Reward Function:**
+```python
+reward = -(call_handling_cost + technician_cost + repeat_call_cost + wait_time_penalty)
+```
+
+**Episode Termination:**
+- Simulation day length reached (default: 28,800s = 8 hours)
+- No more calls in queue
+
+### Training Commands
+
+```bash
+# Masked PPO (main algorithm)
+python train_rl_masked.py \
+    --timesteps 200000 \
+    --seed 42 \
+    --device cpu \
+    --checkpoint-freq 50000
+
+# Unmasked DQN (comparison)
+python train_dqn_unmasked.py \
+    --timesteps 50000 \
+    --seed 42 \
+    --device cpu \
+    --checkpoint-freq 10000
+
+# Masked DQN (comparison)
+python train_dqn_masked.py \
+    --timesteps 200000 \
+    --seed 42 \
+    --device cpu \
+    --checkpoint-freq 50000
+```
+
+### Evaluation Commands
+
+```bash
+# Evaluate all baselines
+python evaluate_policies.py --episodes 10 --seed 42
+
+# Evaluate Masked PPO
+python evaluate_masked_policy.py --episodes 10 --seed 42
+
+# Evaluate Unmasked DQN
+python evaluate_dqn_unmasked.py --episodes 10 --seed 42
+
+# Evaluate Masked DQN
+python evaluate_dqn_masked.py --episodes 10 --seed 42
+```
+
+---
+
+## NOS Project (Base System)
+
+The original NOS project provides the predictive models used for cost estimation in the RL environment.
+
+### Pipeline Stages
+
+1. **Data Access** (`libPBL2425NovaNOS/data_access/`)
+   - Connect to PostgreSQL database
+   - Fetch call, client, and agent data
+
+2. **Data Cleaning** (`libPBL2425NovaNOS/data_cleaning/`)
+   - Clean call data
+   - Clean client data
+   - Clean agent (GC) data
+
+3. **Data Merging** (`libPBL2425NovaNOS/data_cleaning/merger.py`)
+   - Merge cleaned datasets
+   - Create final modeling dataset
+
+4. **Modeling** (`libPBL2425NovaNOS/modelling/modelling.py`)
+   - Train XGBoost models for TMC, FTR, OT
+   - Evaluate model performance
+   - Simulate GC assignment
+
+### Running NOS Pipeline
+
+```bash
+# Run complete NOS pipeline
+python run_pipeline.py
+```
+
+**Note:** Requires database credentials in `config/.env`:
+```bash
+DB_HOST="your_db_host"
+DB_PORT="your_db_port"
+DB_NAME="your_db_name"
+DB_USER="your_db_user"
+DB_PASSWORD="your_db_password"
+```
+
+---
+
+## Documentation
+
+### Comprehensive Reports
+
+- **`SYSTEM_VALIDATION_SUMMARY.md`**: Final validation of all thesis components
+  - Environment validation
+  - Baseline policy validation
+  - Masked PPO validation
+  - DQN experiments validation
+  - Bug fixes and corrections
+  - Thesis claims validation
+
+- **`DQN_EXPERIMENTS_REPORT.md`**: Complete DQN analysis
+  - Unmasked DQN results (89.2% invalid actions)
+  - Masked DQN results (5.2% efficiency)
+  - Comparative analysis with PPO
+  - Bug discovery and correction
+
+### Additional Documentation
+
+- `docs/section5_final_results_summary.md`: Results chapter summary
+- `docs/rl_mathematical_formulation.md`: MDP formulation
+- `docs/rl_validation_findings.md`: Validation findings
+- `docs/mdp_vs_bandit_justification.md`: MDP vs bandit justification
+
+---
 
 ## Setup Instructions
 
-1.  **Clone the Repository**:
-    ```bash
-    git clone <repository_url>
-    cd NOS-PBL-DELIVERABLE
-    ```
+### Prerequisites
 
-2.  **Create a Virtual Environment** (recommended):
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
-    ```
+- Python 3.8+
+- PostgreSQL (for NOS pipeline only)
+- 8GB+ RAM (for RL training)
 
-3.  **Install Dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-   
+### Installation
 
-4.  **Configure Environment Variables**:
-    *   Create a `.env` file inside the `config/` directory (e.g., `config/.env`).
-    *   Add your database credentials and any other required environment variables as shown in the [Configuration](#configuration) section.
+1. **Clone and setup**:
+   ```bash
+   git clone <repository_url>
+   cd thesis_private
+   python -m venv venv
+   source venv/bin/activate  # Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
 
-## Running the Pipeline
+2. **Configure database** (NOS pipeline only):
+   ```bash
+   cp config/.env.example config/.env
+   # Edit config/.env with your credentials
+   ```
 
-To run the entire pipeline, execute the `run_pipeline.py` script from the project root directory:
+3. **Verify installation**:
+   ```bash
+   python -c "import gymnasium; import stable_baselines3; print('RL dependencies OK')"
+   python -c "import xgboost; import pandas; print('NOS dependencies OK')"
+   ```
 
-```bash
-python run_pipeline.py
-```
-The script will log its progress to the console and to a file specified in config/settings.py (default: data/logs/pipeline.log).
-### Output
-The pipeline execution will:
-* Create/populate directories defined in config/settings.py:
-* Train three XGBoost models (TMC, FTR, OT). These models and their associated scalers are currently stored in memory within the modelling_results dictionary returned by modelling.run_modelling().
-* Print model evaluation metrics to the console.
-* Print a sample of the GC assignment simulation results to the console.
-
-
-
-## Notebooks
-The notebooks/ directory contains Jupyter notebooks for various stages of analysis and development. These should act as resources, but are not directly necessary for the pipeline:
-* 01_Cleaning_and_Modelling.ipynb: The full notebook from data access to model creation.
-* 02_Cleaning_and_Pre-Processing.ipynb: Focuses on data cleaning and preprocessing details.
-* 03_Modelling.ipynb: Modelling Exploration.
-* 04_Best_Models.ipynb: Summarizes or showcases the best performing models
-
-These notebooks can be used to understand the data, experiment with different approaches, and visualize results. Ensure you have Jupyter installed (pip install notebook) and run it from the project root.
+---
 
 ## License
-This project is licensed under the terms specified in the LICENSE file.
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## Citation
+
+If you use this code or reference this work, please cite:
+
+```bibtex
+@mastersthesis{schumann2025rl_call_center,
+  author  = {Schumann, Marvin},
+  title   = {Reinforcement Learning for Call Center Agent Routing:
+             An Action Masking Approach},
+  school  = {Nova School of Business and Economics},
+  year    = {2025},
+  type    = {Master's Thesis},
+  address = {Lisbon, Portugal}
+}
+```
+
+---
+
+## Contact
+
+**Marvin Schumann**
+Nova School of Business and Economics
+Email: [your.email@novaims.unl.pt]
+
+---
+
+## Acknowledgments
+
+- Nova School of Business and Economics
+- NOS Portugal (Data partner)
+- Original NOS Project Team (Base system development)
+- Thesis Supervisors
+
+---
+
+**Last Updated:** December 2025
+**Status:** ✅ Validated and ready for thesis submission
