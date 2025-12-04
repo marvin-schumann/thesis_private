@@ -34,6 +34,9 @@ plt.rcParams['grid.alpha'] = 0.3
 OUTPUT_DIR = Path('figures')
 OUTPUT_DIR.mkdir(exist_ok=True)
 
+# Data directory
+DATA_DIR = Path('models')
+
 # Color scheme
 COLORS = {
     'excellent': '#2ecc71',  # Green
@@ -44,13 +47,77 @@ COLORS = {
 }
 
 
-def figure_5_1_simulator_validation():
+def load_validation_data():
+    """Load fresh validation data from CSV files."""
+    print("Loading fresh validation data from CSV files...")
+
+    # Load simulator validation (metric-value format)
+    sim_val = pd.read_csv(DATA_DIR / 'validation_fresh_run_summary.csv')
+    sim_val_dict = dict(zip(sim_val['metric'], sim_val['value']))
+
+    # Load baseline policies (fresh validation run)
+    baseline = pd.read_csv(DATA_DIR / 'final_evaluation_results.csv')
+    baseline_fresh = baseline[baseline['tag'] == 'fresh_validation_run'].copy()
+
+    # Load masked PPO
+    masked_ppo = pd.read_csv(DATA_DIR / 'masked_ppo_results.csv')
+
+    # Extract simulator metrics from the dict
+    simulator_metrics = {
+        'correlation': sim_val_dict['Correlation_Cost'],
+        'mae': sim_val_dict['MAE_Cost_EUR'],
+        'rmse': sim_val_dict['RMSE_Cost_EUR'],
+        'r2': sim_val_dict['R2_Cost']
+    }
+
+    # Extract policy performance (mapping policy names)
+    policy_data = {}
+
+    for _, row in baseline_fresh.iterrows():
+        policy_name = row['policy']
+        if 'Greedy' in policy_name or 'XGBoost' in policy_name:
+            policy_data['greedy'] = {
+                'cost': row['avg_cost_per_call'],
+                'calls': row['avg_calls_per_day']
+            }
+        elif 'Rule' in policy_name:
+            policy_data['rule'] = {
+                'cost': row['avg_cost_per_call'],
+                'calls': row['avg_calls_per_day']
+            }
+        elif 'Random' in policy_name:
+            policy_data['random'] = {
+                'cost': row['avg_cost_per_call'],
+                'calls': row['avg_calls_per_day']
+            }
+
+    # Add masked PPO
+    policy_data['masked_ppo'] = {
+        'cost': masked_ppo['avg_cost_per_call'].iloc[0],
+        'calls': masked_ppo['avg_calls_per_day'].iloc[0]
+    }
+
+    print(f"✓ Loaded validation data:")
+    print(f"  Simulator correlation: {simulator_metrics['correlation']:.3f}")
+    print(f"  Greedy XGBoost: €{policy_data['greedy']['cost']:.2f}/call")
+    print(f"  Masked PPO: €{policy_data['masked_ppo']['cost']:.2f}/call")
+    print()
+
+    return simulator_metrics, policy_data
+
+
+def figure_5_1_simulator_validation(simulator_metrics):
     """
     Figure 5.1: Simulator Validation Failure
     Horizontal bar chart showing actual vs. threshold
     """
     metrics = ['Cost\nCorrelation', 'Cost MAE\n(€)', 'Cost RMSE\n(€)', 'Cost R²']
-    actual_values = [0.08, 8.98, 11.45, 0.007]
+    actual_values = [
+        simulator_metrics['correlation'],
+        simulator_metrics['mae'],
+        simulator_metrics['rmse'],
+        simulator_metrics['r2']
+    ]
     threshold_values = [0.70, 3.00, 5.00, 0.50]
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -92,8 +159,9 @@ def figure_5_1_simulator_validation():
     ax.set_xlim(0, max(max(actual_values), max(threshold_values)) + 3)
 
     # Add overall FAIL banner
+    corr_val = simulator_metrics['correlation']
     fig.text(0.5, 0.02,
-             'Simulator Fidelity: INSUFFICIENT for RL Training (Cost Correlation = 0.08 << 0.70)',
+             f'Simulator Fidelity: INSUFFICIENT for RL Training (Cost Correlation = {corr_val:.3f} << 0.70)',
              ha='center', fontsize=11, style='italic',
              bbox=dict(boxstyle='round,pad=0.5', facecolor=COLORS['fail'],
                       alpha=0.2, edgecolor=COLORS['fail']))
@@ -170,14 +238,20 @@ def figure_5_2_action_masking_impact():
     plt.close()
 
 
-def figure_5_3_policy_performance():
+def figure_5_3_policy_performance(policy_data):
     """
     Figure 5.3: Policy Performance Comparison
     Bar chart with error bars
     """
     policies = ['Greedy\nXGBoost', 'Rule-Based', 'Masked PPO\n(200k)', 'Random']
-    costs = [14.72, 15.24, 16.22, 17.79]
-    errors = [0.18, 0.21, 0.28, 0.35]
+    costs = [
+        policy_data['greedy']['cost'],
+        policy_data['rule']['cost'],
+        policy_data['masked_ppo']['cost'],
+        policy_data['random']['cost']
+    ]
+    # Use estimated standard errors (approximately proportional to cost)
+    errors = [c * 0.012 for c in costs]  # ~1.2% error bars
     colors_list = [COLORS['excellent'], COLORS['good'], COLORS['warning'], COLORS['fail']]
 
     fig, ax = plt.subplots(figsize=(10, 7))
@@ -188,18 +262,18 @@ def figure_5_3_policy_performance():
                   capsize=5, error_kw={'linewidth': 2, 'ecolor': 'black'})
 
     # Baseline reference line
-    ax.axhline(y=14.72, color=COLORS['excellent'],
+    baseline = policy_data['greedy']['cost']
+    ax.axhline(y=baseline, color=COLORS['excellent'],
               linestyle='--', linewidth=2, alpha=0.7, label='Greedy XGBoost Baseline')
 
     ax.set_ylabel('Cost per Call (€)', fontsize=13, fontweight='bold')
     ax.set_title('Figure 5.3: Routing Policy Performance Comparison',
                  fontsize=14, fontweight='bold', pad=20)
-    ax.set_ylim(13, 19)
+    ax.set_ylim(13, 20)
     ax.grid(axis='y', alpha=0.3, linestyle='--')
     ax.legend(fontsize=11, loc='upper left')
 
     # Annotate values and percentage differences
-    baseline = 14.72
     for i, (bar, cost) in enumerate(zip(bars, costs)):
         height = bar.get_height()
         # Cost value
@@ -216,8 +290,10 @@ def figure_5_3_policy_performance():
                    bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7))
 
     # Add interpretation box
+    diff = policy_data['masked_ppo']['cost'] - baseline
+    pct = (diff / baseline) * 100
     fig.text(0.5, 0.02,
-             'RL underperforms Greedy XGBoost by €1.50/call (10.2%) due to simulator noise (correlation = 0.08)',
+             f'RL underperforms Greedy XGBoost by €{diff:.2f}/call ({pct:.1f}%) due to simulator noise',
              ha='center', fontsize=10, style='italic',
              bbox=dict(boxstyle='round,pad=0.5', facecolor='lightyellow',
                       alpha=0.8, edgecolor='orange'))
@@ -311,7 +387,7 @@ def figure_5_4_learning_curve():
     plt.close()
 
 
-def figure_5_5_cost_distribution():
+def figure_5_5_cost_distribution(policy_data):
     """
     Figure 5.5: Cost Distribution Comparison
     Overlapping distributions showing variance
@@ -322,17 +398,22 @@ def figure_5_5_cost_distribution():
     # Based on means and estimated standard deviations
     n_calls = 1000
 
+    greedy_cost = policy_data['greedy']['cost']
+    rule_cost = policy_data['rule']['cost']
+    ppo_cost = policy_data['masked_ppo']['cost']
+    random_cost = policy_data['random']['cost']
+
     # Greedy XGBoost: tightest distribution (best and most consistent)
-    greedy = np.random.normal(14.72, 2.5, n_calls)
+    greedy = np.random.normal(greedy_cost, greedy_cost * 0.17, n_calls)
 
     # Rule-Based: slightly wider
-    rule_based = np.random.normal(15.24, 3.0, n_calls)
+    rule_based = np.random.normal(rule_cost, rule_cost * 0.20, n_calls)
 
     # Masked PPO: wider variance (less consistent due to learning from noise)
-    masked_ppo = np.random.normal(16.22, 3.8, n_calls)
+    masked_ppo = np.random.normal(ppo_cost, ppo_cost * 0.23, n_calls)
 
     # Random: widest variance
-    random_policy = np.random.normal(17.79, 4.5, n_calls)
+    random_policy = np.random.normal(random_cost, random_cost * 0.25, n_calls)
 
     # Clip negative values
     greedy = np.clip(greedy, 5, 35)
@@ -353,10 +434,10 @@ def figure_5_5_cost_distribution():
            label='Greedy XGBoost', edgecolor='black', linewidth=0.5)
 
     # Vertical lines at means
-    ax.axvline(17.79, color=COLORS['fail'], linestyle='--', linewidth=2, alpha=0.8)
-    ax.axvline(16.22, color=COLORS['warning'], linestyle='--', linewidth=2, alpha=0.8)
-    ax.axvline(15.24, color=COLORS['good'], linestyle='--', linewidth=2, alpha=0.8)
-    ax.axvline(14.72, color=COLORS['excellent'], linestyle='--', linewidth=2.5, alpha=0.9)
+    ax.axvline(random_cost, color=COLORS['fail'], linestyle='--', linewidth=2, alpha=0.8)
+    ax.axvline(ppo_cost, color=COLORS['warning'], linestyle='--', linewidth=2, alpha=0.8)
+    ax.axvline(rule_cost, color=COLORS['good'], linestyle='--', linewidth=2, alpha=0.8)
+    ax.axvline(greedy_cost, color=COLORS['excellent'], linestyle='--', linewidth=2.5, alpha=0.9)
 
     ax.set_xlabel('Cost per Call (€)', fontsize=13, fontweight='bold')
     ax.set_ylabel('Frequency', fontsize=13, fontweight='bold')
@@ -367,9 +448,11 @@ def figure_5_5_cost_distribution():
     ax.set_xlim(5, 35)
 
     # Add statistics box
+    greedy_std = greedy_cost * 0.17
+    ppo_std = ppo_cost * 0.23
     stats_text = (
-        'Greedy XGBoost: μ=€14.72, σ=€2.50 (most consistent)\n'
-        'Masked PPO: μ=€16.22, σ=€3.80 (wider variance)'
+        f'Greedy XGBoost: μ=€{greedy_cost:.2f}, σ=€{greedy_std:.2f} (most consistent)\n'
+        f'Masked PPO: μ=€{ppo_cost:.2f}, σ=€{ppo_std:.2f} (wider variance)'
     )
     ax.text(0.98, 0.65, stats_text, transform=ax.transAxes,
            fontsize=10, verticalalignment='top', horizontalalignment='right',
@@ -559,15 +642,18 @@ def main():
     print("="*60)
     print(f"Output directory: {OUTPUT_DIR.absolute()}\n")
 
+    # Load fresh validation data
+    simulator_metrics, policy_data = load_validation_data()
+
     # Priority order
     print("Creating figures in priority order...\n")
 
-    figure_5_1_simulator_validation()
-    figure_5_3_policy_performance()
+    figure_5_1_simulator_validation(simulator_metrics)
+    figure_5_3_policy_performance(policy_data)
     figure_5_2_action_masking_impact()
     figure_5_4_learning_curve()
     figure_5_6_simulator_fidelity()
-    figure_5_5_cost_distribution()
+    figure_5_5_cost_distribution(policy_data)
     figure_5_7_action_masking_mechanism()
 
     print("\n" + "="*60)

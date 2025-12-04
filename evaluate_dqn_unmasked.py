@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Evaluate the MaskablePPO policy trained with action masking.
+Evaluate DQN WITHOUT action masking.
+
+This evaluates Experiment 1: Unmasked DQN
+Tracks calls handled, efficiency, and invalid action rate.
 """
 
 import argparse
@@ -9,35 +12,27 @@ import time
 
 import numpy as np
 import pandas as pd
-from sb3_contrib import MaskablePPO
-from sb3_contrib.common.wrappers import ActionMasker
+from stable_baselines3 import DQN
 
-from call_center_env_masked import CallCenterEnvMasked
+from call_center_env import CallCenterEnv
 
 DATA_PATH = '/Users/marvin.schumann/Library/CloudStorage/OneDrive-Personal/Documents/UNI/Nova SBE/04 Thesis/Data/07052025/full_merged_df.csv'
 ASSETS_DIR = 'models'
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Evaluate MaskablePPO policy")
+    parser = argparse.ArgumentParser(description="Evaluate Unmasked DQN policy")
     parser.add_argument("--episodes", type=int, default=10,
                         help="Number of episodes to evaluate")
     parser.add_argument("--seed", type=int, default=42,
                         help="Base random seed")
     parser.add_argument("--model-path", type=str,
-                        default=os.path.join(ASSETS_DIR, 'rl_model_masked_ppo.zip'),
+                        default=os.path.join(ASSETS_DIR, 'rl_model_dqn_unmasked.zip'),
                         help="Path to trained model")
     parser.add_argument("--output", type=str,
-                        default=os.path.join(ASSETS_DIR, 'masked_ppo_results.csv'),
+                        default=os.path.join(ASSETS_DIR, 'dqn_unmasked_results.csv'),
                         help="Output CSV file")
-    parser.add_argument("--tag", type=str, default="masked_ppo",
-                        help="Tag for this evaluation run")
     return parser.parse_args()
-
-
-def mask_fn(env):
-    """Action mask function for ActionMasker wrapper."""
-    return env.action_masks()
 
 
 def evaluate_episode(env, model, episode_num, base_seed):
@@ -51,12 +46,10 @@ def evaluate_episode(env, model, episode_num, base_seed):
     episode_reward = 0.0
     episode_cost = 0.0
     calls_handled = 0
+    invalid_actions = 0
 
     while not done and step < 10000:
-        # Get action mask and predict
-        action_mask = env.env.action_masks()
-        action, _states = model.predict(obs, deterministic=True, action_masks=action_mask)
-
+        action, _states = model.predict(obs, deterministic=True)
         obs, reward, done, truncated, info = env.step(action)
         step += 1
 
@@ -65,14 +58,18 @@ def evaluate_episode(env, model, episode_num, base_seed):
             episode_reward += reward
             episode_cost += info.get('cost', 0.0)
             calls_handled += 1
+        # Track invalid actions (agent not available)
+        elif 'status' in info and info['status'] == 'invalid_action_agent_busy_or_off_shift':
+            invalid_actions += 1
 
     return {
         'episode': episode_num + 1,
         'total_reward': episode_reward,
         'total_cost': episode_cost,
         'calls_handled': calls_handled,
+        'invalid_actions': invalid_actions,
         'steps': step,
-        'final_time': env.env.current_time
+        'final_time': env.current_time
     }
 
 
@@ -80,21 +77,20 @@ def main():
     args = parse_args()
 
     print("=" * 60)
-    print("EVALUATING MASKABLE PPO POLICY")
+    print("EVALUATING UNMASKED DQN POLICY (EXPERIMENT 1)")
     print("=" * 60)
     print(f"Model: {args.model_path}")
     print(f"Episodes: {args.episodes}")
     print(f"Seed: {args.seed}")
     print()
 
-    # Load environment with action masking
-    print("Loading masked environment...")
-    base_env = CallCenterEnvMasked(data_path=DATA_PATH, assets_dir=ASSETS_DIR)
-    env = ActionMasker(base_env, mask_fn)
+    # Load environment WITHOUT action masking
+    print("Loading environment (no action masking)...")
+    env = CallCenterEnv(data_path=DATA_PATH, assets_dir=ASSETS_DIR)
 
     # Load model
     print(f"Loading model from {args.model_path}...")
-    model = MaskablePPO.load(args.model_path)
+    model = DQN.load(args.model_path)
     model.set_env(env)
     print("✓ Model loaded")
 
@@ -111,7 +107,7 @@ def main():
 
         results.append(result)
 
-        print(f"  Calls: {result['calls_handled']}, Cost: €{result['total_cost']:.2f}, "
+        print(f"  Calls: {result['calls_handled']}, Invalid: {result['invalid_actions']}, "
               f"Steps: {result['steps']}, Time: {elapsed:.1f}s")
 
     # Aggregate results
@@ -123,36 +119,45 @@ def main():
 
     avg_calls = results_df['calls_handled'].mean()
     avg_cost = results_df['total_cost'].mean()
-    avg_cost_per_call = avg_cost / avg_calls if avg_calls > 0 else 0
-
-    print(f"Average calls per day: {avg_calls:.1f}")
-    print(f"Average cost per day: €{avg_cost:.2f}")
-    print(f"Average cost per call: €{avg_cost_per_call:.2f}")
+    avg_invalid = results_df['invalid_actions'].mean()
+    total_attempts = avg_calls + avg_invalid
 
     expected = 590
-    efficiency = avg_calls / expected * 100
+    efficiency = avg_calls / expected * 100 if expected > 0 else 0
+    invalid_rate = avg_invalid / total_attempts * 100 if total_attempts > 0 else 0
+    avg_cost_per_call = avg_cost / avg_calls if avg_calls > 0 else 0
+
+    print(f"Average calls handled per day: {avg_calls:.1f}")
+    print(f"Average cost per day: €{avg_cost:.2f}")
+    print(f"Average cost per call: €{avg_cost_per_call:.2f}")
+    print(f"Average invalid actions per day: {avg_invalid:.1f}")
+    print(f"Total action attempts: {total_attempts:.1f}")
     print(f"\nEfficiency: {efficiency:.1f}% ({avg_calls:.0f}/{expected} expected calls)")
+    print(f"Invalid action rate: {invalid_rate:.1f}%")
 
     # Save results
     summary = pd.DataFrame([{
-        'policy': 'MaskablePPO (Action Masked)',
-        'run_timestamp': time.strftime("%Y-%m-%d %H:%M:%S"),
-        'avg_total_cost_per_day': avg_cost,
-        'avg_cost_per_call': avg_cost_per_call,
-        'avg_reward_per_day': results_df['total_reward'].mean(),
-        'avg_calls_per_day': avg_calls,
-        'tag': args.tag
+        'policy_name': 'DQN (Unmasked)',
+        'cost_per_call': avg_cost_per_call,
+        'calls_per_day': avg_calls,
+        'efficiency_pct': efficiency,
+        'invalid_actions_pct': invalid_rate,
+        'std_dev': results_df['total_cost'].std() / avg_calls if avg_calls > 0 else 0,
+        'training_steps': 50000,  # As specified in experiment
+        'seed': args.seed
     }])
 
     summary.to_csv(args.output, index=False)
     print(f"\n✓ Results saved to {args.output}")
 
-    if efficiency > 95:
-        print("\n🎉 SUCCESS: Action masking solved the problem!")
-    elif efficiency > 80:
-        print("\n⚠️  GOOD: Much better but still some calls missing")
+    # Interpretation
+    if efficiency < 10:
+        print("\n✓ EXPECTED FAILURE: DQN barely handles any calls without action masking")
+        print("   This confirms the action masking problem is algorithm-independent.")
+    elif efficiency < 50:
+        print("\n⚠️  PARTIAL: DQN handles some calls but with high failure rate")
     else:
-        print("\n❌ ISSUE: Still significant problems")
+        print("\n❌ UNEXPECTED: DQN is handling more calls than expected without masking")
 
 
 if __name__ == '__main__':

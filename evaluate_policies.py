@@ -14,7 +14,7 @@ from call_center_env import CallCenterEnv
 from baseline_policies import BaselinePolicies
 
 # --- 1. Configuration ---
-DATA_PATH = '/Users/marvinschumann/Library/CloudStorage/OneDrive-SharedLibraries-NovaSBE/PBL - NOS (Consultants) - General/03 Data/01 Full Datasets/Cleaned Data/07052025/full_merged_df.csv'
+DATA_PATH = '/Users/marvin.schumann/Library/CloudStorage/OneDrive-Personal/Documents/UNI/Nova SBE/04 Thesis/Data/07052025/full_merged_df.csv'
 ASSETS_DIR = 'models'
 
 

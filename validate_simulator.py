@@ -37,7 +37,7 @@ from call_center_env import CallCenterEnv
 from residual_adjustments import ResidualAdjuster
 
 # Configuration
-DATA_PATH = '/Users/marvinschumann/Library/CloudStorage/OneDrive-SharedLibraries-NovaSBE/PBL - NOS (Consultants) - General/03 Data/01 Full Datasets/Cleaned Data/07052025/full_merged_df.csv'
+DATA_PATH = '/Users/marvin.schumann/Library/CloudStorage/OneDrive-Personal/Documents/UNI/Nova SBE/04 Thesis/Data/07052025/full_merged_df.csv'
 ASSETS_DIR = 'models'
 TEST_SIZE = 0.2
 RANDOM_STATE = 42
