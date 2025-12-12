@@ -15,7 +15,7 @@ class BaselinePolicies:
     that the RL agent will be compared against.
     """
     
-    def __init__(self, data_path, assets_dir='models'):
+    def __init__(self, data_path, assets_dir='models', test_indices_path=None):
         print("Loading baseline policy assets...")
         self.assets_dir = assets_dir
         
@@ -50,6 +50,18 @@ class BaselinePolicies:
         self.features_ot = self.feature_lists['ot']
 
         self.full_data = pd.read_csv(data_path)
+
+        # Filter to test set if indices provided
+        if test_indices_path is not None:
+            if os.path.exists(test_indices_path):
+                test_indices = np.load(test_indices_path)
+                self.full_data = self.full_data.loc[self.full_data.index.isin(test_indices)]
+                print(f"✓ Baseline policies filtered to test set: {len(self.full_data):,} samples")
+            else:
+                raise FileNotFoundError(f"Test indices file not found: {test_indices_path}")
+        else:
+            print("⚠️  WARNING: Baseline policies using FULL dataset")
+
         data_dir = os.path.dirname(data_path)
         print(f"Loaded merged dataset for policies from {data_path} with shape {self.full_data.shape}.")
 
@@ -470,6 +482,85 @@ class BaselinePolicies:
             if estimated_cost < best_estimated_cost:
                 best_estimated_cost = estimated_cost
                 best_agent_index = agent_index
+
+        if best_agent_index is None:
+            return random.choice(available_agent_indices)
+
+        return best_agent_index
+
+    def naive_topic_only_policy(self, observation):
+        """
+        Naive Topic-Only Baseline (matching group work modelling).
+
+        Uses ONLY call topic averages, completely ignoring agent characteristics.
+        This replicates the baseline from the group work phase that achieved:
+        - 41% pairwise accuracy
+        - R² = -0.0885 for TMC prediction
+
+        Since all agents get the same cost estimate for a given topic,
+        we simply select a random available agent (no differentiation possible).
+
+        This is fundamentally different from rule_based_policy which uses
+        agent-specific historical performance.
+        """
+        call_data = self._get_call_data_from_obs(observation)
+        available_agent_indices = self._get_available_agents(observation)
+
+        if len(available_agent_indices) == 0:
+            return random.randint(0, self.num_agents - 1)
+
+        # Get topic-only averages (same for all agents)
+        topic_suffix = self._determine_topic_suffix(call_data)
+        topic_key = f"topic_{topic_suffix}" if topic_suffix else None
+        topic_avg = self.rule_based_averages.get(topic_key, self.default_rule_average)
+
+        # Calculate cost using ONLY topic statistics (no agent differentiation)
+        mean_tmc = max(30.0, float(topic_avg.get('tmc', self.default_rule_average['tmc'])))
+        mean_ftr = float(np.clip(topic_avg.get('ftr_prob', self.default_rule_average['ftr_prob']), 0.0, 1.0))
+        ot_prob = float(np.clip(topic_avg.get('ot_prob', self.default_rule_average['ot_prob']), 0.0, 1.0))
+
+        # Since all agents have the same estimated cost for this topic,
+        # we cannot differentiate between them → select randomly from available
+        # (This mimics the group work approach where agent selection was poor)
+        return random.choice(available_agent_indices)
+
+    def rule_based_conservative_policy(self, observation):
+        """
+        Conservative Rule-Based Policy with higher minimum call thresholds.
+
+        Uses the same hierarchical lookup logic as rule_based_policy, but with
+        stricter thresholds to avoid small sample bias:
+        - rule_min_calls_topic: 50 (vs 5 in standard)
+        - rule_min_calls_overall: 100 (vs 20 in standard)
+
+        This prevents selection of agents with unreliable statistics based on
+        only a few calls, addressing the small sample bias identified in diagnostics.
+        """
+        call_data = self._get_call_data_from_obs(observation)
+        available_agent_indices = self._get_available_agents(observation)
+
+        if len(available_agent_indices) == 0:
+            return random.randint(0, self.num_agents - 1)
+
+        # Temporarily override thresholds for conservative evaluation
+        original_topic_threshold = self.rule_min_calls_topic
+        original_overall_threshold = self.rule_min_calls_overall
+
+        self.rule_min_calls_topic = 50
+        self.rule_min_calls_overall = 100
+
+        best_agent_index = None
+        best_estimated_cost = float('inf')
+        for agent_index in available_agent_indices:
+            agent_key = self.agent_keys[agent_index]
+            estimated_cost = self._estimate_rule_based_cost(call_data, agent_key)
+            if estimated_cost < best_estimated_cost:
+                best_estimated_cost = estimated_cost
+                best_agent_index = agent_index
+
+        # Restore original thresholds
+        self.rule_min_calls_topic = original_topic_threshold
+        self.rule_min_calls_overall = original_overall_threshold
 
         if best_agent_index is None:
             return random.choice(available_agent_indices)
