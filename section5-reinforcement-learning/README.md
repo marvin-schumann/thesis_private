@@ -1,11 +1,46 @@
-# RL Section - Chapter 5: Reinforcement Learning
+# Section 5: Reinforcement Learning for Call Routing
 
-This directory contains all code and results for the Reinforcement Learning chapter of the thesis.
+**Author:** Marvin Schumann
+
+## Research Question
+
+Can reinforcement learning with action masking outperform heuristic baselines for routing ~1,200 daily calls to 653 agents, optimizing for a composite cost metric?
+
+## Methodology
+
+- **Environment**: Custom Gymnasium environment simulating NOS call center operations
+- **Algorithm**: PPO with action masking (MaskablePPO from SB3-Contrib)
+- **Architecture**: MLP [256, 256], learning rate 3e-4
+- **Training**: 200,000 timesteps (~8 hours on M3 Pro)
+- **Action Space**: 653 agents (discrete)
+- **State Space**: 859-dimensional observation (call features + agent availability)
+
+## Key Results
+
+| Policy | Avg Cost/Call | vs Greedy |
+|--------|---------------|-----------|
+| Greedy XGBoost | €20.30 | baseline |
+| Masked PPO | €21.62 | +6.5% |
+| Rule-Based | €26.91 | +32.6% |
+| Random | €26.88 | +32.4% |
+
+**Key Finding**: Masked PPO underperforms Greedy XGBoost by 6.5%, primarily due to low simulator fidelity (cost correlation r=0.08, Spearman ρ=0.24).
+
+**Methodological Contribution**: Action masking is critical—improves valid action rate from ~6% to ~100%.
+
+## Dependencies
+
+This section **depends on Section 1's trained XGBoost models** for:
+- TMC (call duration) prediction
+- FTR (first time resolution) prediction
+- OT (technician visit) prediction
+
+The simulator uses these models to predict call outcomes for any agent assignment.
 
 ## Directory Structure
 
 ```
-rl-section/
+section5-reinforcement-learning/
 ├── call_center_env.py           # Core RL environment
 ├── call_center_env_masked.py    # Environment with action masking
 ├── baseline_policies.py         # Baseline policies (Rule-Based, Random, Greedy)
@@ -24,10 +59,10 @@ rl-section/
 
 ## Running Scripts
 
-All scripts must be run from the `rl-section/` directory with `PYTHONPATH=.` set:
+All scripts must be run from the `section5-reinforcement-learning/` directory with `PYTHONPATH=.` set:
 
 ```bash
-cd rl-section
+cd section5-reinforcement-learning
 PYTHONPATH=. python3 evaluation/evaluate_calendar_days.py --help
 PYTHONPATH=. python3 training/train_rl_masked.py --help
 ```
@@ -36,7 +71,7 @@ PYTHONPATH=. python3 training/train_rl_masked.py --help
 
 **Evaluate all policies** (30 episodes, both modes):
 ```bash
-cd rl-section
+cd section5-reinforcement-learning
 PYTHONPATH=. python3 evaluation/evaluate_calendar_days.py \
   --mode both \
   --episodes 30 \
@@ -46,7 +81,7 @@ PYTHONPATH=. python3 evaluation/evaluate_calendar_days.py \
 
 **Train Masked PPO**:
 ```bash
-cd rl-section
+cd section5-reinforcement-learning
 PYTHONPATH=. python3 training/train_rl_masked.py \
   --timesteps 500000 \
   --seed 42
@@ -54,13 +89,13 @@ PYTHONPATH=. python3 training/train_rl_masked.py \
 
 **Run validation**:
 ```bash
-cd rl-section
+cd section5-reinforcement-learning
 PYTHONPATH=. python3 validation/validate_simulator.py
 ```
 
 **Generate analysis**:
 ```bash
-cd rl-section
+cd section5-reinforcement-learning
 PYTHONPATH=. python3 analysis/analyze_final_evaluation.py \
   --timestamp 20251212_215243
 ```
@@ -102,4 +137,4 @@ pip install -r ../requirements.txt
 - All scripts use the test set at: `models/test_indices.npy` (35,879 calls, 653 agents)
 - Calendar days: `models/selected_calendar_days_30.json` (January 1-30, 2024)
 - Data path is hardcoded in scripts (OneDrive location)
-- Models directory: `rl-section/models/`
+- Models directory: `section5-reinforcement-learning/models/`
