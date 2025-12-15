@@ -1,7 +1,7 @@
 # Optimizing the Match Between Contact Managers and Clients for a Portuguese Telco Company
 
 **Master's Thesis in Business Analytics**
-Nova School of Business and Economics, 2024
+Nova School of Business and Economics, 2025
 
 ## Authors
 
@@ -9,6 +9,8 @@ Nova School of Business and Economics, 2024
 - Runa Maria Kleppek
 - Marvin Schumann
 - Raquel Santos
+
+**Supervisors:** Patrícia Xufre, Nuno André da Silva
 
 **Company Partner:** NOS (Portuguese telecommunications)
 
@@ -71,7 +73,7 @@ Collaborative filtering system for personalized agent training recommendations b
 ### Section 5: Reinforcement Learning
 **Author:** Marvin Schumann
 
-PPO with action masking for call routing optimization. Key finding: RL underperforms Greedy XGBoost by 6.5% due to simulator fidelity limitations, but demonstrates the critical importance of action masking.
+PPO with action masking for call routing optimization. Key finding: RL underperforms Greedy XGBoost by 6.5% due to simulator fidelity limitations (cost correlation r=0.08), but demonstrates the critical importance of action masking.
 
 ## Section Dependencies
 
