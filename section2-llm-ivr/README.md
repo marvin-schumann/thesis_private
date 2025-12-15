@@ -9,9 +9,9 @@ Can a Large Language Model (LLM) improve the Interactive Voice Response (IVR) ex
 ## Methodology
 
 - **Interface**: Gradio web application for voice interaction
-- **LLM**: GPT-4o via OpenAI API
-- **Speech-to-Text**: OpenAI Whisper
-- **Text-to-Speech**: OpenAI TTS
+- **LLM**: Azure OpenAI (GPT model via Azure endpoint)
+- **Speech-to-Text**: Azure Speech Services
+- **Text-to-Speech**: Azure Speech Services
 - **Conversation Management**: Multi-turn dialogue with context retention
 
 ## Key Features
@@ -40,12 +40,12 @@ This section is **standalone** and does not depend on other sections.
 | File | Description |
 |------|-------------|
 | `nos_voice_ivr_prototype.py` | Main Gradio application with LLM integration |
-| `env.env` | Environment variables (API keys) |
+| `.env` | Environment variables (API keys) |
 
 ## How to Run
 
-1. Configure API keys in `env.env`
-2. Install dependencies: `pip install gradio openai`
+1. Configure API keys in `.env`
+2. Install dependencies: `pip install gradio azure-cognitiveservices-speech openai python-dotenv pandas`
 3. Run the application:
 
 ```bash
@@ -56,11 +56,12 @@ python nos_voice_ivr_prototype.py
 ## Requirements
 
 - Python 3.8+
-- OpenAI API key (for GPT-4o, Whisper, and TTS)
+- Azure OpenAI API credentials
+- Azure Speech Services credentials
 - Gradio
 
 ## Notes
 
-- API keys in `env.env` should be kept confidential
+- API keys in `.env` should be kept confidential
 - The prototype is designed for demonstration purposes
 - Voice interaction requires microphone access in the browser
