@@ -40,11 +40,11 @@ This section is **standalone** and does not depend on other sections.
 | File | Description |
 |------|-------------|
 | `nos_voice_ivr_prototype.py` | Main Gradio application with LLM integration |
-| `.env` | Environment variables (API keys) |
+| `.env.example` | Environment variables template (copy to `.env` and add your keys) |
 
 ## How to Run
 
-1. Configure API keys in `.env`
+1. Copy `.env.example` to `.env` and fill in your API keys
 2. Install dependencies: `pip install gradio azure-cognitiveservices-speech openai python-dotenv pandas`
 3. Run the application:
 
