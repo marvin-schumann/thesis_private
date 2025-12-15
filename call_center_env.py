@@ -32,8 +32,13 @@ class CallCenterEnv(gymnasium.Env):
     Calls are processed one-at-a-time in the order they arrive (simulated via Poisson process).
     """
     
-    def __init__(self, data_path, assets_dir='models'):
+    def __init__(self, data_path, assets_dir='models', test_indices_path=None,
+                 episode_mode='random', calendar_date=None):
         super().__init__()
+
+        # --- Episode Mode Configuration ---
+        self.episode_mode = episode_mode
+        self.calendar_date = calendar_date
 
         # --- 1. Load All Assets (Oracles & Data) ---
         self.assets_dir = assets_dir
@@ -83,9 +88,38 @@ class CallCenterEnv(gymnasium.Env):
         logger.info(f"Loading merged dataset from {data_path}...")
         self.full_data = pd.read_csv(data_path)
         logger.info(f"Full dataset loaded with shape {self.full_data.shape}.")
+
+        # Filter to test set if indices provided
+        if test_indices_path is not None:
+            if os.path.exists(test_indices_path):
+                test_indices = np.load(test_indices_path)
+                # Filter to test set only
+                self.full_data = self.full_data.loc[self.full_data.index.isin(test_indices)]
+                logger.info(f"✓ Filtered to test set: {len(test_indices):,} samples ({len(self.full_data):,} after merge)")
+            else:
+                logger.error(f"Test indices file not found: {test_indices_path}")
+                raise FileNotFoundError(f"Test indices file not found: {test_indices_path}")
+        else:
+            logger.warning("⚠️  No test indices provided - using FULL dataset (may include training data)")
+
         data_dir = os.path.dirname(data_path)
         # Initialize RNG for reproducibility
         self._rng = np.random.default_rng()
+
+        # Validate episode mode configuration
+        if self.episode_mode not in ['random', 'calendar_day']:
+            raise ValueError(f"episode_mode must be 'random' or 'calendar_day', got '{self.episode_mode}'")
+
+        if self.episode_mode == 'calendar_day':
+            if self.calendar_date is None:
+                raise ValueError("calendar_date must be provided when episode_mode='calendar_day'")
+            # Parse timestamp column to extract date if available
+            if 'call_LEG_START_TIME_DAT' in self.full_data.columns:
+                self.full_data['_parsed_date'] = pd.to_datetime(self.full_data['call_LEG_START_TIME_DAT']).dt.date
+                self.full_data['_parsed_timestamp'] = pd.to_datetime(self.full_data['call_LEG_START_TIME_DAT'])
+                logger.info(f"Parsed timestamps for calendar-day mode. Date range: {self.full_data['_parsed_date'].min()} to {self.full_data['_parsed_date'].max()}")
+            else:
+                raise ValueError("calendar_day mode requires 'call_LEG_START_TIME_DAT' column in data")
 
         # Attempt to load GCS features from gcs_unique.csv in the same directory
         self.gcs_data = None
@@ -209,33 +243,58 @@ class CallCenterEnv(gymnasium.Env):
 
     def _get_next_call_arrival(self):
         """
-        Samples the time until the next call arrival using a Time-Dependent Poisson Process.
+        Samples the time until the next call arrival.
+        In calendar_day mode, just increments time slightly (calls processed in order).
+        In random mode, uses Time-Dependent Poisson Process.
         """
-        current_hour = int((self.current_time % self.simulation_day_length) / 3600)
-        rate_per_hour = self.hourly_arrival_rates.get(current_hour, 10) # 10 as default
-        rate_per_second = rate_per_hour / 3600
+        if self.episode_mode == 'calendar_day':
+            # Calendar day mode: Simple approach - just increment time by 1 second per call
+            # This ensures calls are processed in chronological order from the data
+            # without complex timestamp synchronization
+            return self.current_time + 1.0
+        else:
+            # Random mode: original Poisson process logic
+            current_hour = int((self.current_time % self.simulation_day_length) / 3600)
+            rate_per_hour = self.hourly_arrival_rates.get(current_hour, 10) # 10 as default
+            rate_per_second = rate_per_hour / 3600
 
-        # Sample from an exponential distribution (inter-arrival time of a Poisson process)
-        # Use self._rng for consistent random number generation
-        rng = getattr(self, "_rng", np.random.default_rng())
-        time_until_next_call = rng.exponential(1.0 / rate_per_second)
-        return self.current_time + time_until_next_call
+            # Sample from an exponential distribution (inter-arrival time of a Poisson process)
+            # Use self._rng for consistent random number generation
+            rng = getattr(self, "_rng", np.random.default_rng())
+            time_until_next_call = rng.exponential(1.0 / rate_per_second)
+            return self.current_time + time_until_next_call
 
     def _sample_call(self):
         """
         Samples the next call from our historical data following the prepared order.
+        In calendar_day mode, returns calls in chronological order.
+        In random mode, returns calls in shuffled order.
         """
-        if not hasattr(self, "_call_order") or len(self._call_order) == 0:
-            raise ValueError("Call order not initialized. Did you forget to reset the environment?")
+        if self.episode_mode == 'calendar_day':
+            # Calendar day mode: use chronological order
+            if not hasattr(self, "_calendar_day_call_pointer"):
+                raise ValueError("Calendar day episode not initialized. Did you forget to reset the environment?")
 
-        if self._call_pointer >= len(self._call_order):
-            # Reshuffle for subsequent cycles to avoid repetition bias
-            self._call_order = self._rng.permutation(self.call_indices)
-            self._call_pointer = 0
+            if self._calendar_day_call_pointer >= len(self._calendar_day_call_indices):
+                # No more calls for this calendar day - signal completion
+                raise StopIteration("All calls for calendar day have been processed")
 
-        idx = self._call_order[self._call_pointer]
-        self._call_pointer += 1
-        return self.call_feature_df.loc[idx].to_dict()
+            idx = self._calendar_day_call_indices[self._calendar_day_call_pointer]
+            self._calendar_day_call_pointer += 1
+            return self._calendar_day_call_features.loc[idx].to_dict()
+        else:
+            # Random mode: original logic
+            if not hasattr(self, "_call_order") or len(self._call_order) == 0:
+                raise ValueError("Call order not initialized. Did you forget to reset the environment?")
+
+            if self._call_pointer >= len(self._call_order):
+                # Reshuffle for subsequent cycles to avoid repetition bias
+                self._call_order = self._rng.permutation(self.call_indices)
+                self._call_pointer = 0
+
+            idx = self._call_order[self._call_pointer]
+            self._call_pointer += 1
+            return self.call_feature_df.loc[idx].to_dict()
         
     def _assign_shifts(self):
         """
@@ -273,6 +332,47 @@ class CallCenterEnv(gymnasium.Env):
             assigned_count += 1
 
         return agent_shifts
+
+    def _setup_calendar_day_episode(self):
+        """
+        Sets up the environment to replay a specific calendar day.
+        This method filters calls to the specified date and prepares them in chronological order.
+        Returns the number of calls available for the calendar day.
+        """
+        if self.episode_mode != 'calendar_day':
+            raise RuntimeError("_setup_calendar_day_episode() called but episode_mode is not 'calendar_day'")
+
+        # Parse calendar_date if it's a string
+        if isinstance(self.calendar_date, str):
+            target_date = pd.to_datetime(self.calendar_date).date()
+        else:
+            target_date = self.calendar_date
+
+        # Filter to calls from this specific calendar day
+        if '_parsed_date' not in self.full_data.columns:
+            raise ValueError("Calendar day mode requires '_parsed_date' column (should be created in __init__)")
+
+        day_mask = self.full_data['_parsed_date'] == target_date
+        day_calls = self.full_data[day_mask].copy()
+
+        if len(day_calls) == 0:
+            raise ValueError(f"No calls found for calendar date {target_date}")
+
+        # Sort by timestamp to get chronological order
+        day_calls = day_calls.sort_values('_parsed_timestamp')
+
+        # Store calendar day call data
+        self._calendar_day_calls = day_calls
+        self._calendar_day_call_indices = day_calls.index.to_numpy()
+        self._calendar_day_timestamps = day_calls['_parsed_timestamp'].values
+
+        # Extract call features for the calendar day
+        call_cols = [col for col in day_calls.columns if col.startswith('call_') or col.startswith('client_')]
+        self._calendar_day_call_features = day_calls[call_cols]
+
+        logger.info(f"Calendar day mode: Loaded {len(day_calls)} calls for {target_date}")
+
+        return len(day_calls)
 
     def _get_agent_availability(self):
         """
@@ -451,18 +551,28 @@ class CallCenterEnv(gymnasium.Env):
         elif not hasattr(self, "_rng"):
             self._rng = np.random.default_rng()
 
-        # Prepare call order for this episode
-        if len(self.call_indices) == 0:
-            raise ValueError("No call indices available for sampling.")
-        self._call_order = self._rng.permutation(self.call_indices)
-        self._call_pointer = 0
+        # Mode-specific setup
+        if self.episode_mode == 'calendar_day':
+            # Calendar day mode: setup chronological episode
+            num_calls = self._setup_calendar_day_episode()
+            self._calendar_day_call_pointer = 0
+            # Max steps = number of calls in the day (plus generous buffer for invalid actions)
+            # Allow up to 20x the number of calls to handle many invalid actions
+            self.max_steps_per_episode = num_calls * 20
+            logger.info(f"Calendar day episode initialized with {num_calls} calls")
+        else:
+            # Random mode: prepare shuffled call order
+            if len(self.call_indices) == 0:
+                raise ValueError("No call indices available for sampling.")
+            self._call_order = self._rng.permutation(self.call_indices)
+            self._call_pointer = 0
+            self.max_steps_per_episode = 10000  # Safety limit to prevent infinite loops
 
         # Reset simulation time (e.g., start of a new day)
         self.current_time = 0.0
 
         # Reset step counter for episode truncation safety
         self.episode_step_count = 0
-        self.max_steps_per_episode = 10000  # Safety limit to prevent infinite loops
 
         # Assign agents to shifts for this new day
         self.agent_shifts = self._assign_shifts()
@@ -519,7 +629,11 @@ class CallCenterEnv(gymnasium.Env):
                 return self._handle_call_abandonment()
 
             # Check if simulation day has ended
-            done = self.current_time >= self.simulation_day_length
+            # In calendar day mode, don't check simulation_day_length - episode ends when calls run out
+            if self.episode_mode == 'calendar_day':
+                done = False  # Will be set to True by StopIteration handling
+            else:
+                done = self.current_time >= self.simulation_day_length
 
             observation = self._get_observation()
             info = {
@@ -538,13 +652,34 @@ class CallCenterEnv(gymnasium.Env):
 
         self.agent_available_at[chosen_agent_key] = self.current_time + pred_tmc
 
-        self.current_time = self._get_next_call_arrival()
-        self.current_call = self._sample_call()
-        self.current_call_arrival_time = self.current_time
-        self.current_call_wait_time = 0.0
+        # Try to get next call - handle StopIteration for calendar day mode
+        try:
+            self.current_time = self._get_next_call_arrival()
+            self.current_call = self._sample_call()
+            self.current_call_arrival_time = self.current_time
+            self.current_call_wait_time = 0.0
+        except StopIteration:
+            # Calendar day complete: all calls processed
+            observation = self._get_observation()
+            info = {
+                'status': 'success_calendar_day_complete',
+                'cost': cost,
+                'reward': reward,
+                'pred_tmc': pred_tmc,
+                'pred_ftr': pred_ftr,
+                'pred_ot': pred_ot,
+                'steps': self.episode_step_count,
+                'wait_time': wait_time_served,
+                'abandoned_calls': self.abandoned_calls
+            }
+            return observation, reward, True, False, info
 
         observation = self._get_observation()
-        done = self.current_time >= self.simulation_day_length
+        # In calendar day mode, don't check simulation_day_length - episode ends when calls run out
+        if self.episode_mode == 'calendar_day':
+            done = False  # Will be set to True by StopIteration handling
+        else:
+            done = self.current_time >= self.simulation_day_length
         info = {
             'status': 'success',
             'cost': cost,
@@ -566,13 +701,29 @@ class CallCenterEnv(gymnasium.Env):
         reward = -total_penalty
         self.abandoned_calls += 1
 
-        self.current_time = self._get_next_call_arrival()
-        self.current_call = self._sample_call()
-        self.current_call_arrival_time = self.current_time
-        self.current_call_wait_time = 0.0
+        # Try to get next call - handle StopIteration for calendar day mode
+        try:
+            self.current_time = self._get_next_call_arrival()
+            self.current_call = self._sample_call()
+            self.current_call_arrival_time = self.current_time
+            self.current_call_wait_time = 0.0
+        except StopIteration:
+            # Calendar day complete: all calls processed
+            observation = self._get_observation()
+            info = {
+                'status': 'call_abandoned_calendar_day_complete',
+                'penalty': total_penalty,
+                'wait_time': wait_time,
+                'abandoned_calls': self.abandoned_calls
+            }
+            return observation, reward, True, False, info
 
         observation = self._get_observation()
-        done = self.current_time >= self.simulation_day_length
+        # In calendar day mode, don't check simulation_day_length - episode ends when calls run out
+        if self.episode_mode == 'calendar_day':
+            done = False  # Will be set to True by StopIteration handling
+        else:
+            done = self.current_time >= self.simulation_day_length
         info = {
             'status': 'call_abandoned',
             'penalty': total_penalty,

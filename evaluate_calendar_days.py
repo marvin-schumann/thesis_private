@@ -9,11 +9,13 @@ This script evaluates routing policies on both:
 This validates that policy performance rankings hold under realistic
 operational conditions (complete calendar days vs synthetic episodes).
 
-Evaluates 4 functional policies:
+Evaluates 6 functional policies:
 - Random
 - Rule-Based
 - Greedy XGBoost
 - Masked PPO
+- DQN Masked
+- DQN Unmasked
 
 Usage:
     python evaluate_calendar_days.py --mode both --episodes 10 --seed 42
@@ -29,6 +31,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+from stable_baselines3 import DQN
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
 
@@ -73,6 +76,10 @@ def parse_args() -> argparse.Namespace:
                         help="Skip Greedy XGBoost policy")
     parser.add_argument("--skip-masked-ppo", action="store_true",
                         help="Skip Masked PPO policy")
+    parser.add_argument("--skip-dqn-masked", action="store_true",
+                        help="Skip DQN Masked policy")
+    parser.add_argument("--skip-dqn-unmasked", action="store_true",
+                        help="Skip DQN Unmasked policy")
     return parser.parse_args()
 
 
@@ -90,7 +97,7 @@ def evaluate_policy_random_mode(env, policy, policy_name: str, n_episodes: int,
         Dict with episode-level results
     """
     is_sb3_model = hasattr(policy, 'predict')
-    is_maskable = 'MaskablePPO' in policy_name or 'Masked' in policy_name
+    is_maskable = 'MaskablePPO' in policy_name or ('Masked' in policy_name and 'DQN' in policy_name)
 
     results = []
 
@@ -170,7 +177,7 @@ def evaluate_policy_calendar_day_mode(env, policy, policy_name: str,
         Dict with day-level results
     """
     is_sb3_model = hasattr(policy, 'predict')
-    is_maskable = 'MaskablePPO' in policy_name or 'Masked' in policy_name
+    is_maskable = 'MaskablePPO' in policy_name or ('Masked' in policy_name and 'DQN' in policy_name)
 
     results = []
 
@@ -340,6 +347,10 @@ def main():
         policies_to_evaluate.append(('Greedy XGBoost', 'baseline', random_env))
     if not args.skip_masked_ppo:
         policies_to_evaluate.append(('Masked PPO', 'masked', random_masked_env))
+    if not args.skip_dqn_masked:
+        policies_to_evaluate.append(('DQN Masked', 'dqn_masked', random_masked_env))
+    if not args.skip_dqn_unmasked:
+        policies_to_evaluate.append(('DQN Unmasked', 'dqn_unmasked', random_env))
 
     if not policies_to_evaluate:
         print("No policies selected. Exiting.")
@@ -393,6 +404,22 @@ def main():
                 policy = MaskablePPO.load(model_path)
                 policy.set_env(env)
                 print(f"  ✓ Loaded model from {model_path}")
+            elif policy_type == 'dqn_masked':
+                model_path = os.path.join(ASSETS_DIR, 'rl_model_dqn_masked.zip')
+                if not os.path.exists(model_path):
+                    print(f"  ✗ Skipping {policy_name}: model not found at {model_path}")
+                    continue
+                policy = DQN.load(model_path)
+                policy.set_env(env)
+                print(f"  ✓ Loaded model from {model_path}")
+            elif policy_type == 'dqn_unmasked':
+                model_path = os.path.join(ASSETS_DIR, 'rl_model_dqn_unmasked.zip')
+                if not os.path.exists(model_path):
+                    print(f"  ✗ Skipping {policy_name}: model not found at {model_path}")
+                    continue
+                policy = DQN.load(model_path)
+                policy.set_env(env)
+                print(f"  ✓ Loaded model from {model_path}")
             else:
                 raise ValueError(f"Unknown policy type: {policy_type}")
 
@@ -433,6 +460,20 @@ def main():
                     print(f"  ✗ Skipping {policy_name}: model not found at {model_path}")
                     continue
                 policy = MaskablePPO.load(model_path)
+                print(f"  ✓ Loaded model from {model_path}")
+            elif policy_type == 'dqn_masked':
+                model_path = os.path.join(ASSETS_DIR, 'rl_model_dqn_masked.zip')
+                if not os.path.exists(model_path):
+                    print(f"  ✗ Skipping {policy_name}: model not found at {model_path}")
+                    continue
+                policy = DQN.load(model_path)
+                print(f"  ✓ Loaded model from {model_path}")
+            elif policy_type == 'dqn_unmasked':
+                model_path = os.path.join(ASSETS_DIR, 'rl_model_dqn_unmasked.zip')
+                if not os.path.exists(model_path):
+                    print(f"  ✗ Skipping {policy_name}: model not found at {model_path}")
+                    continue
+                policy = DQN.load(model_path)
                 print(f"  ✓ Loaded model from {model_path}")
             else:
                 raise ValueError(f"Unknown policy type: {policy_type}")

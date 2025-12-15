@@ -1,0 +1,45 @@
+SECTION 5 FIGURE CAPTIONS
+=========================
+
+Figure 5.1: Simulator Validation Results
+Caption: Simulator validation metrics compared to acceptance thresholds. All four metrics (Cost Correlation, MAE, RMSE, R²) failed to meet minimum thresholds (r < 0.70, MAE > 3.00, RMSE > 5.00, R² < 0.50), indicating insufficient simulator fidelity for reliable RL training. Red bars show actual values, green dashed lines show target thresholds.
+
+---
+
+Figure 5.2: Action Masking Impact on Policy Performance
+Caption: Comparison of PPO agent efficiency and invalid action rates with and without action masking. Action masking improved call handling efficiency from 6.3% to 104.2% (17× improvement) while reducing invalid actions from 86.4% to 0.1%. Left panel shows efficiency percentage relative to 100% target; right panel shows invalid action rate.
+
+---
+
+Figure 5.3: Routing Policy Performance Comparison
+Caption: Average cost per call (€) for all routing policies evaluated on clean test set (n=10 episodes, error bars show ±1 standard error). Greedy XGBoost achieved lowest cost (€14.89/call), followed by Rule-Based (€15.18/call), Masked PPO (€15.67/call), and Random (€17.09/call). Percentages show cost increase relative to Greedy XGBoost baseline.
+
+---
+
+Figure 5.4: RL Training Dynamics (Masked PPO)
+Caption: Average episode reward during Masked PPO training over 200,000 timesteps. The policy shows rapid improvement in the first 50,000 steps (learning phase), followed by a plateau with no further improvement despite 150,000 additional training steps. Shaded region shows ±1 standard deviation. Early plateau indicates the agent has reached its learning limit under the given simulator noise.
+
+---
+
+Figure 5.5: Cost Distribution by Routing Policy
+Caption: Distribution of cost per call (€) across 1,000 simulated calls for each policy. Greedy XGBoost (green) shows the tightest distribution with lowest mean (μ=€14.89, σ=€4.00), while Masked PPO (orange) exhibits wider variance (μ=€15.67, σ=€5.68), indicating less consistent performance. Dashed vertical lines show mean values for each policy.
+
+---
+
+Figure 5.6: Simulator Fidelity - Predicted vs. Actual Costs
+Caption: Scatter plot comparing simulator-predicted costs to actual costs from historical data (n=5,000 test samples). The near-zero correlation (r=0.072) between predictions and actuals, far below the acceptance threshold (r ≥ 0.70), explains why RL agents cannot learn optimal policies from simulator feedback. Black dashed line shows perfect prediction (y=x); red line shows actual regression fit.
+
+---
+
+Figure 5.7: Action Masking Mechanism
+Caption: Conceptual diagram of the action masking mechanism for routing decisions. (Step 1) Policy network outputs 250 logits corresponding to possible agent assignments. (Step 2) Agent availability mask identifies which agents are available (green, ✓) vs. busy/off-shift (red, ✗). (Step 3) Unavailable agent logits are set to -∞. (Step 4) Softmax over masked logits produces valid action distribution. Example shows 6/10 agents available, restricting policy to valid choices only.
+
+==========================
+END OF FIGURE CAPTIONS
+==========================
+
+Usage Instructions:
+- Copy the caption text (starting after "Caption:") for use in your thesis
+- In LaTeX: Use \caption{[paste caption here]}
+- In Word: Right-click figure > Insert Caption > Paste caption text
+- The "Figure 5.X:" prefix should be added by LaTeX/Word automatically

@@ -1,0 +1,11 @@
+date,call_count,month,day_of_week,day_name
+2024-01-17,124,1,2,Wednesday
+2024-01-29,133,1,0,Monday
+2024-02-10,112,2,5,Saturday
+2024-02-19,131,2,0,Monday
+2024-03-21,110,3,3,Thursday
+2024-03-23,127,3,5,Saturday
+2024-04-13,124,4,5,Saturday
+2024-04-15,124,4,0,Monday
+2024-05-09,110,5,3,Thursday
+2024-05-13,127,5,0,Monday

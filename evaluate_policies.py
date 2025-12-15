@@ -153,11 +153,19 @@ def main():
     print("--- Starting Policy Evaluation ---")
 
     print("Initializing Environment...")
-    env = CallCenterEnv(data_path=DATA_PATH, assets_dir=ASSETS_DIR)
+    env = CallCenterEnv(
+        data_path=DATA_PATH,
+        assets_dir=ASSETS_DIR,
+        test_indices_path=os.path.join(ASSETS_DIR, 'test_indices.npy')
+    )
     print("Environment initialized.")
 
     print("Initializing Baseline Policies...")
-    baselines = BaselinePolicies(data_path=DATA_PATH, assets_dir=ASSETS_DIR)
+    baselines = BaselinePolicies(
+        data_path=DATA_PATH,
+        assets_dir=ASSETS_DIR,
+        test_indices_path=os.path.join(ASSETS_DIR, 'test_indices.npy')
+    )
 
     policies_to_evaluate: Dict[str, object] = {}
     if not args.skip_random:

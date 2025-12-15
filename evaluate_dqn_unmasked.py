@@ -86,7 +86,11 @@ def main():
 
     # Load environment WITHOUT action masking
     print("Loading environment (no action masking)...")
-    env = CallCenterEnv(data_path=DATA_PATH, assets_dir=ASSETS_DIR)
+    env = CallCenterEnv(
+        data_path=DATA_PATH,
+        assets_dir=ASSETS_DIR,
+        test_indices_path=os.path.join(ASSETS_DIR, 'test_indices.npy')
+    )
 
     # Load model
     print(f"Loading model from {args.model_path}...")

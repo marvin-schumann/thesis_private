@@ -762,6 +762,15 @@ def run_modelling(df_input: pd.DataFrame, gcs_unique_input: pd.DataFrame) -> dic
             random_state=42,
             stratify=y[TARGET_OT]
         )
+
+        # Save train/test indices for reproducible train/test separation
+        train_indices = X_train.index.values
+        test_indices = X_test.index.values
+        np.save(os.path.join(ASSETS_DIR, 'train_indices.npy'), train_indices)
+        np.save(os.path.join(ASSETS_DIR, 'test_indices.npy'), test_indices)
+        logger.info(f"✓ Saved train indices: {len(train_indices):,} samples")
+        logger.info(f"✓ Saved test indices: {len(test_indices):,} samples")
+
     except ValueError as e:
         print("!!! CRITICAL ERROR: Stratification failed. This can happen if a class has only 1 member. !!!")
         print(f"Error: {e}")

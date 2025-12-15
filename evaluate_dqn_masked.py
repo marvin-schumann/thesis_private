@@ -89,7 +89,11 @@ def main():
 
     # Load environment with action masking
     print("Loading masked environment...")
-    base_env = CallCenterEnvMasked(data_path=DATA_PATH, assets_dir=ASSETS_DIR)
+    base_env = CallCenterEnvMasked(
+        data_path=DATA_PATH,
+        assets_dir=ASSETS_DIR,
+        test_indices_path=os.path.join(ASSETS_DIR, 'test_indices.npy')
+    )
     env = ActionMasker(base_env, mask_fn)
 
     # Load model

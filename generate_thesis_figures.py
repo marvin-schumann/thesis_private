@@ -48,56 +48,41 @@ COLORS = {
 
 
 def load_validation_data():
-    """Load fresh validation data from CSV files."""
-    print("Loading fresh validation data from CSV files...")
+    """Load latest 30-episode calendar day evaluation data (THESIS_RESULTS_SUMMARY_V2)."""
+    print("Loading latest 30-episode calendar day evaluation data...")
 
-    # Load simulator validation (metric-value format)
-    sim_val = pd.read_csv(DATA_DIR / 'validation_fresh_run_summary.csv')
-    sim_val_dict = dict(zip(sim_val['metric'], sim_val['value']))
+    # Use latest results from THESIS_RESULTS_SUMMARY_V2_20251213_120943.md
+    # Calendar Day Mode results (30 episodes, ~1,196 calls each)
 
-    # Load baseline policies (fresh validation run)
-    baseline = pd.read_csv(DATA_DIR / 'final_evaluation_results.csv')
-    baseline_fresh = baseline[baseline['tag'] == 'fresh_validation_run'].copy()
-
-    # Load masked PPO
-    masked_ppo = pd.read_csv(DATA_DIR / 'masked_ppo_results.csv')
-
-    # Extract simulator metrics from the dict
+    # Simulator metrics (from validation_fresh_run_summary.csv)
     simulator_metrics = {
-        'correlation': sim_val_dict['Correlation_Cost'],
-        'mae': sim_val_dict['MAE_Cost_EUR'],
-        'rmse': sim_val_dict['RMSE_Cost_EUR'],
-        'r2': sim_val_dict['R2_Cost']
+        'correlation': 0.080,  # Total cost correlation
+        'mae': 8.90,           # MAE in EUR
+        'rmse': 12.87,         # RMSE in EUR
+        'r2': 0.006           # R² = 0.080² ≈ 0.006
     }
 
-    # Extract policy performance (mapping policy names)
-    policy_data = {}
-
-    for _, row in baseline_fresh.iterrows():
-        policy_name = row['policy']
-        if 'Greedy' in policy_name or 'XGBoost' in policy_name:
-            policy_data['greedy'] = {
-                'cost': row['avg_cost_per_call'],
-                'calls': row['avg_calls_per_day']
-            }
-        elif 'Rule' in policy_name:
-            policy_data['rule'] = {
-                'cost': row['avg_cost_per_call'],
-                'calls': row['avg_calls_per_day']
-            }
-        elif 'Random' in policy_name:
-            policy_data['random'] = {
-                'cost': row['avg_cost_per_call'],
-                'calls': row['avg_calls_per_day']
-            }
-
-    # Add masked PPO
-    policy_data['masked_ppo'] = {
-        'cost': masked_ppo['avg_cost_per_call'].iloc[0],
-        'calls': masked_ppo['avg_calls_per_day'].iloc[0]
+    # Policy performance from Calendar Day Mode (30 episodes)
+    policy_data = {
+        'greedy': {
+            'cost': 20.30,     # Greedy XGBoost
+            'calls': 1196      # Avg calls per calendar day
+        },
+        'rule': {
+            'cost': 20.69,     # Rule-Based
+            'calls': 1196
+        },
+        'random': {
+            'cost': 23.35,     # Random
+            'calls': 1196
+        },
+        'masked_ppo': {
+            'cost': 21.62,     # Masked PPO
+            'calls': 1196
+        }
     }
 
-    print(f"✓ Loaded validation data:")
+    print(f"✓ Loaded latest evaluation data (30 episodes, Calendar Day Mode):")
     print(f"  Simulator correlation: {simulator_metrics['correlation']:.3f}")
     print(f"  Greedy XGBoost: €{policy_data['greedy']['cost']:.2f}/call")
     print(f"  Masked PPO: €{policy_data['masked_ppo']['cost']:.2f}/call")
@@ -152,8 +137,6 @@ def figure_5_1_simulator_validation(simulator_metrics):
     ax.set_yticks(y_pos)
     ax.set_yticklabels(metrics, fontsize=12)
     ax.set_xlabel('Metric Value', fontsize=13, fontweight='bold')
-    ax.set_title('Figure 5.1: Simulator Validation Results - All Metrics Failed',
-                 fontsize=14, fontweight='bold', pad=20)
     ax.legend(loc='lower right', fontsize=11, framealpha=0.9)
     ax.grid(axis='x', alpha=0.3, linestyle='--')
     ax.set_xlim(0, max(max(actual_values), max(threshold_values)) + 3)
@@ -228,9 +211,6 @@ def figure_5_2_action_masking_impact():
                 f'{val:.1f}%', ha='center', va='bottom',
                 fontsize=12, fontweight='bold')
 
-    fig.suptitle('Figure 5.2: Action Masking Impact - From 6% to 104% Efficiency',
-                 fontsize=14, fontweight='bold', y=1.02)
-
     plt.tight_layout()
     plt.savefig(OUTPUT_DIR / 'figure5_2_action_masking_impact.png',
                 bbox_inches='tight', dpi=300)
@@ -267,9 +247,7 @@ def figure_5_3_policy_performance(policy_data):
               linestyle='--', linewidth=2, alpha=0.7, label='Greedy XGBoost Baseline')
 
     ax.set_ylabel('Cost per Call (€)', fontsize=13, fontweight='bold')
-    ax.set_title('Figure 5.3: Routing Policy Performance Comparison',
-                 fontsize=14, fontweight='bold', pad=20)
-    ax.set_ylim(13, 20)
+    ax.set_ylim(18, 25)
     ax.grid(axis='y', alpha=0.3, linestyle='--')
     ax.legend(fontsize=11, loc='upper left')
 
@@ -366,8 +344,6 @@ def figure_5_4_learning_curve():
 
     ax.set_xlabel('Training Timesteps (thousands)', fontsize=13, fontweight='bold')
     ax.set_ylabel('Average Episode Reward (€, negative cost)', fontsize=13, fontweight='bold')
-    ax.set_title('Figure 5.4: RL Training Dynamics - Early Plateau Indicates Learning Limit',
-                 fontsize=14, fontweight='bold', pad=20)
     ax.legend(fontsize=11, loc='lower right', framealpha=0.9)
     ax.grid(True, alpha=0.3, linestyle='--')
     ax.set_xlim(0, 200)
@@ -441,8 +417,6 @@ def figure_5_5_cost_distribution(policy_data):
 
     ax.set_xlabel('Cost per Call (€)', fontsize=13, fontweight='bold')
     ax.set_ylabel('Frequency', fontsize=13, fontweight='bold')
-    ax.set_title('Figure 5.5: Cost Distribution by Routing Policy',
-                 fontsize=14, fontweight='bold', pad=20)
     ax.legend(fontsize=11, loc='upper right', framealpha=0.9)
     ax.grid(axis='y', alpha=0.3, linestyle='--')
     ax.set_xlim(5, 35)
@@ -509,8 +483,6 @@ def figure_5_6_simulator_fidelity():
 
     ax.set_xlabel('Actual Cost (€)', fontsize=13, fontweight='bold')
     ax.set_ylabel('Predicted Cost (€)', fontsize=13, fontweight='bold')
-    ax.set_title('Figure 5.6: Simulator Fidelity - Predicted vs. Actual Costs',
-                 fontsize=14, fontweight='bold', pad=20)
     ax.legend(fontsize=12, loc='upper left', framealpha=0.9)
     ax.grid(True, alpha=0.3, linestyle='--')
     ax.set_xlim(min_val, max_val)
@@ -553,10 +525,6 @@ def figure_5_7_action_masking_mechanism():
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
     ax.axis('off')
-
-    # Title
-    fig.suptitle('Figure 5.7: Action Masking Mechanism',
-                 fontsize=14, fontweight='bold', y=0.95)
 
     # Box style
     box_style = dict(boxstyle='round,pad=0.8', facecolor='lightblue',
