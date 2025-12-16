@@ -16,7 +16,7 @@
 
 ---
 
-## Answers to Claude's 5 Questions
+## Answers to Key Questions
 
 ### 1. Cost Range Investigation: Why Did Costs Increase €15-18 → €20-27?
 
@@ -147,40 +147,7 @@ From `THESIS_RESULTS_SUMMARY_V2_20251213_120943.md`:
 
 ---
 
-### 3. DQN Experiments Status: Need to Re-Run?
-
-**Answer**: DQN experiments are from the OLD setup (250 agents). They should be re-run for consistency, BUT they're not essential for the thesis.
-
-#### Current DQN Status:
-
-**Files to Check**:
-- `models/dqn_masked_results.csv` - If exists, check date/metadata
-- `models/dqn_unmasked_results.csv` - If exists, check date/metadata
-- Old thesis mentions: "89.2% invalid actions without masking"
-
-**Investigation Needed**:
-1. Check file timestamps and headers to see if they're pre-653 agents
-2. If from old setup (250 agents), results are INVALID for current thesis
-3. If missing entirely, need to run `evaluate_dqn_masked.py` and `evaluate_dqn_unmasked.py`
-
-#### Recommendation:
-
-**Option A (Minimal)**: Remove DQN from thesis entirely
-- Focus on PPO results (which ARE current)
-- DQN was exploratory, not core contribution
-- Saves time if thesis deadline is tight
-
-**Option B (Complete)**: Re-run DQN with 653 agents
-- Run: `python3 evaluate_dqn_masked.py --episodes 30 --seed 42`
-- Run: `python3 evaluate_dqn_unmasked.py --episodes 30 --seed 42`
-- Compare masked vs unmasked performance
-- Include in thesis for completeness
-
-**My suggestion**: Go with Option A unless you have specific research questions about DQN vs PPO. The PPO results are sufficient to demonstrate RL challenges on this problem.
-
----
-
-### 4. Agent Count Validation: 653 Agents Confirmed?
+### 3. Agent Count Validation: 653 Agents Confirmed?
 
 **Answer**: YES, all new evaluations use 653 agents. Everything is updated correctly.
 
@@ -215,7 +182,7 @@ From `THESIS_RESULTS_SUMMARY_V2_20251213_120943.md`:
 
 ---
 
-### 5. Summary: Executive Answers
+### 4. Summary: Executive Answers
 
 #### Why Did Costs Increase?
 **Evaluation mode changed from full-test-set to episode-based sampling.** The test data is the same, but:
@@ -249,15 +216,6 @@ From `THESIS_RESULTS_SUMMARY_V2_20251213_120943.md`:
 - **High outcome variance** (noisy cost predictions)
 - **Agent interchangeability** (topic dominates)
 - **Strong heuristic baselines**
-
-#### Do DQN Experiments Need Re-Running?
-**Recommended: Remove DQN from thesis** (Option A)
-- DQN results are from old 250-agent setup
-- PPO results are sufficient to demonstrate RL challenges
-- Focus thesis on PPO vs baselines comparison
-
-**Alternative: Re-run if time permits** (Option B)
-- But not essential for thesis contribution
 
 #### Any Other Discrepancies or Concerns?
 **None found.** The current evaluation is:
@@ -307,8 +265,7 @@ From `THESIS_RESULTS_SUMMARY_V2_20251213_120943.md`:
 1. **Use Section 4.5 from V2** for methodology (model-based simulation)
 2. **Use Section 3 from V2** for results tables and statistical tests
 3. **Frame RL underperformance** as fundamental challenge (not simulator limitation)
-4. **Remove DQN** from thesis (or clearly mark as exploratory/outdated)
-5. **Add one sentence** explaining episode-based evaluation creates variance
+4. **Add one sentence** explaining episode-based evaluation creates variance
 
 ---
 

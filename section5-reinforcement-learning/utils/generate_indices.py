@@ -11,8 +11,8 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-# Paths
-DATA_PATH = '/Users/marvin.schumann/Library/CloudStorage/OneDrive-Personal/Documents/UNI/Nova SBE/04 Thesis/Data/07052025/full_merged_df.csv'
+# Paths - Update DATA_PATH to your local data location
+DATA_PATH = os.environ.get('NOS_DATA_PATH', 'data/full_merged_df.csv')
 MODELS_DIR = 'models'
 
 print("=" * 60)

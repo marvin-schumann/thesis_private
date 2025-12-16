@@ -13,8 +13,8 @@ from stable_baselines3 import DQN, PPO
 from call_center_env import CallCenterEnv
 from baseline_policies import BaselinePolicies
 
-# --- 1. Configuration ---
-DATA_PATH = '/Users/marvin.schumann/Library/CloudStorage/OneDrive-Personal/Documents/UNI/Nova SBE/04 Thesis/Data/07052025/full_merged_df.csv'
+# --- 1. Configuration - Update DATA_PATH to your local data location ---
+DATA_PATH = os.environ.get('NOS_DATA_PATH', 'data/full_merged_df.csv')
 ASSETS_DIR = 'models'
 
 

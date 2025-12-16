@@ -22,8 +22,8 @@ from sb3_contrib.common.maskable.evaluation import evaluate_policy as evaluate_m
 # Import our masked environment
 from call_center_env_masked import CallCenterEnvMasked
 
-# --- Configuration ---
-DATA_PATH = '/Users/marvin.schumann/Library/CloudStorage/OneDrive-Personal/Documents/UNI/Nova SBE/04 Thesis/Data/07052025/full_merged_df.csv'
+# --- Configuration - Update DATA_PATH to your local data location ---
+DATA_PATH = os.environ.get('NOS_DATA_PATH', 'data/full_merged_df.csv')
 ASSETS_DIR = 'models'
 os.makedirs(ASSETS_DIR, exist_ok=True)
 

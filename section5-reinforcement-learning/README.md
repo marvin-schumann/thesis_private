@@ -20,11 +20,11 @@ Can reinforcement learning with action masking outperform heuristic baselines fo
 | Policy | Avg Cost/Call | vs Greedy |
 |--------|---------------|-----------|
 | Greedy XGBoost | €20.30 | baseline |
+| Rule-Based | €20.69 | +1.9% |
 | Masked PPO | €21.62 | +6.5% |
-| Rule-Based | €26.91 | +32.6% |
-| Random | €26.88 | +32.4% |
+| Random | €23.35 | +15.0% |
 
-**Key Finding**: Masked PPO underperforms Greedy XGBoost by 6.5%, primarily due to low simulator fidelity (cost correlation r=0.08, Spearman ρ=0.24).
+**Key Finding**: Masked PPO underperforms Greedy XGBoost by 6.5%, primarily due to low simulator fidelity (Spearman ρ=0.19).
 
 **Methodological Contribution**: Action masking is critical—improves valid action rate from ~6% to ~100%.
 
@@ -52,9 +52,7 @@ section5-reinforcement-learning/
 ├── utils/                       # Utility scripts
 ├── models/                      # Trained models and results
 ├── figures/                     # Thesis figures
-├── documentation/               # Current documentation
-├── archive/                     # Historical documentation
-└── docs/                        # Technical documentation
+└── docs/                        # Documentation
 ```
 
 ## Running Scripts
@@ -120,7 +118,7 @@ PYTHONPATH=. python3 analysis/analyze_final_evaluation.py \
 
 ## Documentation
 
-- **For thesis writing**: See `documentation/CLAUDE_CODE_HANDOFF_THESIS_QUESTIONS.md`
+- **For thesis writing**: See `docs/CLAUDE_CODE_HANDOFF_THESIS_QUESTIONS.md`
 - **Technical details**: See `docs/COMPREHENSIVE_AUDIT_REPORT_DEC2025.md`
 - **Final results**: See `docs/section5_final_results_summary.md`
 

@@ -10,7 +10,8 @@ import pandas as pd
 from baseline_policies import BaselinePolicies
 from call_center_env import CallCenterEnv
 
-DATA_PATH = '/Users/marvin.schumann/Library/CloudStorage/OneDrive-Personal/Documents/UNI/Nova SBE/04 Thesis/Data/07052025/full_merged_df.csv'
+# Configuration - Update DATA_PATH to your local data location
+DATA_PATH = os.environ.get('NOS_DATA_PATH', 'data/full_merged_df.csv')
 TEST_INDICES_PATH = 'models/test_indices.npy'
 
 def main():

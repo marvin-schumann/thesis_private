@@ -14,9 +14,9 @@ import numpy as np
 import pandas as pd
 from call_center_env import CallCenterEnv
 
-# Paths
+# Paths - Update DATA_PATH to your local data location
 ASSETS_DIR = 'models'
-DATA_PATH = '/Users/marvin.schumann/Library/CloudStorage/OneDrive-Personal/Documents/UNI/Nova SBE/04 Thesis/Data/07052025/full_merged_df.csv'
+DATA_PATH = os.environ.get('NOS_DATA_PATH', 'data/full_merged_df.csv')
 
 def main():
     print("=" * 60)

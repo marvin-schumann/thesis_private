@@ -37,8 +37,8 @@ from tqdm import tqdm
 from call_center_env import CallCenterEnv
 from residual_adjustments import ResidualAdjuster
 
-# Configuration
-DATA_PATH = '/Users/marvin.schumann/Library/CloudStorage/OneDrive-Personal/Documents/UNI/Nova SBE/04 Thesis/Data/07052025/full_merged_df.csv'
+# Configuration - Update DATA_PATH to your local data location
+DATA_PATH = os.environ.get('NOS_DATA_PATH', 'data/full_merged_df.csv')
 ASSETS_DIR = 'models'
 TEST_SIZE = 0.2
 RANDOM_STATE = 42

@@ -14,8 +14,8 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
-# Configuration
-DATA_PATH = '/Users/marvin.schumann/Library/CloudStorage/OneDrive-Personal/Documents/UNI/Nova SBE/04 Thesis/Data/07052025/full_merged_df.csv'
+# Configuration - Update DATA_PATH to your local data location
+DATA_PATH = os.environ.get('NOS_DATA_PATH', 'data/full_merged_df.csv')
 TEST_INDICES_PATH = 'models/test_indices.npy'
 OUTPUT_JSON = 'models/selected_calendar_days_30.json'
 OUTPUT_CSV = 'models/selected_calendar_days_30_stats.csv'

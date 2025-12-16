@@ -12,16 +12,14 @@ We successfully implemented and evaluated a Masked PPO agent for call center rou
 
 ## 1. Final Performance Results
 
-### Performance Comparison Table
+### Performance Comparison Table (Calendar Day Mode, 30 days)
 
-| Rank | Policy | Calls/Day | Efficiency | Cost/Call | Cost/Day | Performance |
-|------|--------|-----------|------------|-----------|----------|-------------|
-| **1** | **Greedy XGBoost** | 607.3 | 100% | **€14.72** | €8,938.43 | Best |
-| **2** | **Rule-Based** | 607.3 | 100% | **€15.24** | €9,254.38 | +3.5% vs XGBoost |
-| **3** | **Masked PPO (200k)** | 614.5 | 104% | **€16.22** | €9,966.93 | +10.2% vs XGBoost |
-| **4** | **Random** | 607.3 | 100% | **€17.79** | €10,802.55 | +20.9% vs XGBoost |
-| ~~5~~ | ~~DQN (broken)~~ | 1.3 | 0.2% | €14.95 | €19.94 | Invalid |
-| ~~6~~ | ~~PPO (broken)~~ | 1.3 | 0.2% | €13.28 | €17.70 | Invalid |
+| Rank | Policy | Cost/Call | Performance |
+|------|--------|-----------|-------------|
+| **1** | **Greedy XGBoost** | **€20.30** | Best |
+| **2** | **Rule-Based** | **€20.69** | +1.9% vs XGBoost |
+| **3** | **Masked PPO** | **€21.62** | +6.5% vs XGBoost |
+| **4** | **Random** | **€23.35** | +15.0% vs XGBoost |
 
 ### Key Metrics
 
@@ -37,7 +35,7 @@ We successfully implemented and evaluated a Masked PPO agent for call center rou
 
 ### Problem Discovery
 
-Initial RL implementations (DQN, PPO) suffered from a critical bug:
+Initial RL implementations (PPO without masking) suffered from a critical bug:
 - Only handled **30-40 calls/day** (5-6% efficiency) instead of ~590
 - Diagnostic analysis revealed **86% of actions were invalid** (selecting unavailable agents)
 - Agents wasted time selecting busy/off-shift agents, running out of simulation time
@@ -65,7 +63,7 @@ class CallCenterEnvMasked(CallCenterEnv):
 | **Efficiency** | 5-6% | 104% | **17× improvement** |
 | **Calls/day** | 30-40 | 614.5 | **15× improvement** |
 | **Invalid actions** | 86% | ~0% | **Eliminated** |
-| **Cost/call** | N/A (invalid) | €16.22 | Valid results |
+| **Cost/call** | N/A (invalid) | €21.62 | Valid results |
 
 **Technical Contribution**: Demonstrated that action masking is **essential** when action spaces have hard validity constraints.
 
@@ -75,8 +73,8 @@ class CallCenterEnvMasked(CallCenterEnv):
 
 ### Performance Gap Analysis
 
-**Masked PPO (€16.22) vs Greedy XGBoost (€14.72):**
-- **Gap**: €1.50/call (10.2% worse)
+**Masked PPO (€21.62) vs Greedy XGBoost (€20.30):**
+- **Gap**: €1.32/call (6.5% worse)
 - **Root Cause**: Simulator inaccuracy
 
 ### Simulator Validation Results (from Section 5.2)
@@ -94,10 +92,10 @@ class CallCenterEnvMasked(CallCenterEnv):
 
 | Method | Approach | Noise Tolerance | Result |
 |--------|----------|-----------------|--------|
-| **Greedy XGBoost** | **Online optimization**: Evaluates all agents, picks minimum predicted cost at decision time | ✅ High | **€14.72** |
-| **Masked PPO** | **Offline learning**: Learns patterns from accumulated reward feedback during training | ❌ Low | **€16.22** |
+| **Greedy XGBoost** | **Online optimization**: Evaluates all agents, picks minimum predicted cost at decision time | ✅ High | **€20.30** |
+| **Masked PPO** | **Offline learning**: Learns patterns from accumulated reward feedback during training | ❌ Low | **€21.62** |
 
-**Key Insight**: With cost correlation = 0.08, the simulator provides ~92% noise in reward feedback. RL attempts to learn patterns from this noise, while Greedy directly uses noisy predictions (which works better via max/min operations over 250 options).
+**Key Insight**: With Spearman ρ = 0.19 (Pearson r = 0.08), the simulator has low fidelity in predicting actual costs. RL attempts to learn patterns from noisy reward feedback, while Greedy directly uses predictions (which works better via min operations over 250 options).
 
 ---
 
@@ -105,15 +103,15 @@ class CallCenterEnvMasked(CallCenterEnv):
 
 Despite simulator limitations, Masked PPO showed evidence of learning:
 
-**Masked PPO (€16.22) vs Random (€17.79):**
-- **Improvement**: €1.57/call (8.8% better)
+**Masked PPO (€21.62) vs Random (€23.35):**
+- **Improvement**: €1.73/call (7.4% better)
 - **Interpretation**: Agent learned *some* routing patterns from simulator
 - **But insufficient**: Couldn't match simple heuristics
 
 This proves:
 1. ✅ The RL agent **did learn** (beats random)
 2. ✅ Action masking **works correctly** (104% efficiency)
-3. ❌ Simulator accuracy **limits performance ceiling** (can't beat €14.72)
+3. ❌ Simulator accuracy **limits performance ceiling** (can't beat €20.30)
 
 ---
 
@@ -134,8 +132,8 @@ This proves:
 **Finding**: Even with proper action masking and sufficient training (200k timesteps), RL cannot learn effective policies from low-fidelity simulators.
 
 **Evidence**:
-- Cost correlation = 0.08 (threshold: 0.70)
-- RL (€16.22) underperforms Greedy XGBoost (€14.72) by 10.2%
+- Spearman ρ = 0.19, Pearson r = 0.08 (threshold: 0.70)
+- RL (€21.62) underperforms Greedy XGBoost (€20.30) by 6.5%
 
 **Implication**: **Simulator validation must precede RL implementation** in simulator-based approaches.
 
@@ -156,7 +154,7 @@ This proves:
 
 **Q1: "Why didn't you train for 500k timesteps instead of 200k?"**
 
-**Answer**: "Training crashed at 240k timesteps due to a numerical stability issue with the large action space (653 agents). We evaluated the 200k checkpoint, which represents 306 simulated days of experience and is sufficient for policy convergence in this domain. More importantly, the limiting factor is **simulator accuracy** (cost correlation = 0.08), not training duration. Additional training would not overcome this fundamental bottleneck."
+**Answer**: "Training crashed at 240k timesteps due to a numerical stability issue with the large action space (653 agents). We evaluated the 200k checkpoint, which represents 306 simulated days of experience and is sufficient for policy convergence in this domain. More importantly, the limiting factor is **simulator accuracy** (Spearman ρ = 0.19), not training duration. Additional training would not overcome this fundamental bottleneck."
 
 **Q2: "Why does RL perform worse than simple baselines?"**
 
@@ -174,7 +172,7 @@ This proves:
 3. Validated that simulator accuracy is the bottleneck, not algorithm choice
 4. Provided infrastructure and documentation for future work
 
-The negative result (RL not beating baselines) was **predicted by our simulator validation** (cost correlation = 0.08). This validates our experimental design and provides valuable guidance: fix the TMC predictor (R² = 0.12 → 0.60+) before attempting RL."
+The negative result (RL not beating baselines) was **predicted by our simulator validation** (Spearman ρ = 0.19). This validates our experimental design and provides valuable guidance: fix the TMC predictor (R² = 0.12 → 0.60+) before attempting RL."
 
 **Q5: "What would you do differently?"**
 
@@ -200,10 +198,10 @@ The key insight is: **validate your simulator first** (Section 5.2), then choose
 \toprule
 \textbf{Policy} & \textbf{Calls/Day} & \textbf{Cost/Day (€)} & \textbf{Cost/Call (€)} & \textbf{vs. Best} \\
 \midrule
-Greedy XGBoost   & 607.3 & 8,938.43  & \textbf{14.72} & — \\
-Rule-Based       & 607.3 & 9,254.38  & 15.24 & +3.5\% \\
-Masked PPO (200k) & 614.5 & 9,966.93  & 16.22 & +10.2\% \\
-Random           & 607.3 & 10,802.55 & 17.79 & +20.9\% \\
+Greedy XGBoost   & 607.3 & 12,325.91  & \textbf{20.30} & — \\
+Rule-Based       & 607.3 & 12,562.59  & 20.69 & +1.9\% \\
+Masked PPO (200k) & 614.5 & 13,127.39  & 21.62 & +6.5\% \\
+Random           & 607.3 & 14,177.05 & 23.35 & +15.0\% \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -221,7 +219,6 @@ Random           & 607.3 & 10,802.55 & 17.79 & +20.9\% \\
 \textbf{Implementation} & \textbf{Calls/Day} & \textbf{Efficiency} & \textbf{Invalid Actions} & \textbf{Status} \\
 \midrule
 PPO (no masking)  & 37 & 6.3\% & 86.4\% & Invalid \\
-DQN (no masking)  & 30 & 5.3\% & 86.6\% & Invalid \\
 Masked PPO (200k) & 614.5 & 104.2\% & $\sim$0\% & Valid \\
 \bottomrule
 \end{tabular}
@@ -259,7 +256,7 @@ Cost R²         & 0.007 & 0.50 & \xmark \\
 
 ### 5.2 Simulator Validation
 - Methodology (recreate 80/20 split, compare predicted vs actual costs)
-- Results (cost correlation = 0.08, MAE = €8.98)
+- Results (Spearman ρ = 0.19, MAE = €9.43)
 - Root cause analysis (TMC R² = 0.12)
 - Conclusion: Simulator fails validation
 
@@ -328,7 +325,7 @@ This is **NOT** a failed experiment. It's a **methodological contribution** show
 You successfully:
 - ✅ Fixed critical bug (action masking: 5% → 104% efficiency)
 - ✅ Trained valid RL agent (beats random by 8.8%)
-- ✅ Validated simulator hypothesis (cost correlation = 0.08 explains gap)
+- ✅ Validated simulator hypothesis (Spearman ρ = 0.19 explains gap)
 - ✅ Created complete infrastructure (2,316 lines of code)
 - ✅ Documented everything rigorously
 
@@ -409,7 +406,7 @@ The fact that RL doesn't beat XGBoost is **the expected result given your simula
 
 1. Practice answering committee questions (Section 6)
 2. Review simulator validation methodology (Section 5.2)
-3. Prepare 1-slide summary: "Action masking fixed bug (5% → 104%), but simulator accuracy limited performance (€16.22 vs €14.72)"
+3. Prepare 1-slide summary: "Action masking fixed bug (5% → 104%), but simulator accuracy limited performance (€21.62 vs €20.30)"
 
 ### After Defense (Optional Future Work)
 
@@ -450,5 +447,5 @@ Write Section 5 using this document as your guide. You have all the results, ana
 **Document created**: 2025-11-25
 **Model checkpoint**: `models/checkpoints_masked_ppo/masked_ppo_200000_steps.zip`
 **Training timesteps**: 200,000
-**Final performance**: €16.22/call (104% efficiency)
+**Final performance**: €21.62/call (104% efficiency)
 **Status**: ✅ Ready for thesis
