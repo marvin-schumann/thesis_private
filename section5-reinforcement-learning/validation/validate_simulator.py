@@ -30,6 +30,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
+from scipy.stats import spearmanr
 from tqdm import tqdm
 
 # Import environment components
@@ -187,7 +188,9 @@ def validate_simulator(data_path, sample_size, output_path, apply_residuals=True
     ot_target_col = None
 
     possible_tmc_cols = ['call_LEG_DURATION_SEC_QTY', 'TMC_dependent', 'call_TMC']
-    possible_ftr_cols = ['call_FTR_dependent', 'call_FTR_CALCULATED', 'call_FTR_1_SUM']
+    # IMPORTANT: Use call_FTR_CALCULATED but convert to binary (>0) to match Section 1/3's FTR_dependent
+    # Section 1/3 define: FTR_dependent = (call_FTR_CALCULATED > 0).astype(int)
+    possible_ftr_cols = ['call_FTR_CALCULATED']  # We'll convert to binary below
     possible_ot_cols = ['call_FLAG_OT', 'OT_dependent']
 
     for col in possible_tmc_cols:
@@ -207,6 +210,13 @@ def validate_simulator(data_path, sample_size, output_path, apply_residuals=True
 
     if not all([tmc_target_col, ftr_target_col, ot_target_col]):
         raise ValueError(f"Could not find target columns. Found: TMC={tmc_target_col}, FTR={ftr_target_col}, OT={ot_target_col}")
+
+    # Convert FTR to binary to match Section 1/3's FTR_dependent definition
+    # Section 1/3: FTR_dependent = (call_FTR_CALCULATED > 0).astype(int)
+    if ftr_target_col == 'call_FTR_CALCULATED':
+        full_df['FTR_dependent'] = (full_df[ftr_target_col] > 0).astype(int)
+        ftr_target_col = 'FTR_dependent'
+        print(f"✓ Converted call_FTR_CALCULATED to binary FTR_dependent (matching Section 1/3)")
 
     print(f"✓ Target columns: TMC={tmc_target_col}, FTR={ftr_target_col}, OT={ot_target_col}")
 
@@ -343,14 +353,16 @@ def validate_simulator(data_path, sample_size, output_path, apply_residuals=True
     rmse_cost = np.sqrt(mean_squared_error(results_df['actual_cost'], results_df['pred_cost']))
     r2_cost = r2_score(results_df['actual_cost'], results_df['pred_cost'])
     corr_cost = np.corrcoef(results_df['actual_cost'], results_df['pred_cost'])[0, 1]
+    spearman_cost, _ = spearmanr(results_df['actual_cost'], results_df['pred_cost'])
 
     print(f"\n" + "="*60)
     print("COST PREDICTION (Primary Validation Metric)")
     print("="*60)
-    print(f"  MAE:         €{mae_cost:.2f}")
-    print(f"  RMSE:        €{rmse_cost:.2f}")
-    print(f"  R²:          {r2_cost:.4f}")
-    print(f"  Correlation: {corr_cost:.4f}")
+    print(f"  MAE:              €{mae_cost:.2f}")
+    print(f"  RMSE:             €{rmse_cost:.2f}")
+    print(f"  R²:               {r2_cost:.4f}")
+    print(f"  Pearson r:        {corr_cost:.4f}")
+    print(f"  Spearman ρ:       {spearman_cost:.4f}  (comparable to Teresa's ρ=0.324)")
 
     # Summary statistics
     print(f"\nCost Summary:")
@@ -434,6 +446,9 @@ def validate_simulator(data_path, sample_size, output_path, apply_residuals=True
     }, {
         'metric': 'Correlation_Cost',
         'value': corr_cost
+    }, {
+        'metric': 'Spearman_Cost',
+        'value': spearman_cost
     }, {
         'metric': 'Mean_Actual_Cost_EUR',
         'value': results_df['actual_cost'].mean()
