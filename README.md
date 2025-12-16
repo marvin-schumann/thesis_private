@@ -35,7 +35,7 @@ Where:
 ├── section1-group-baseline/      # XGBoost models for TMC, FTR, OT prediction
 ├── section2-llm-ivr/             # LLM-powered IVR prototype
 ├── section3-e2e-models/          # End-to-end vs fragmented cost prediction
-├── section4-recommender/         # Agent training recommender system
+├── section4-recommender/         # Agent training prioritization system
 ├── section5-reinforcement-learning/  # RL-based call routing optimization
 ├── README.md                     # This file
 ├── requirements.txt              # Python dependencies
@@ -63,12 +63,12 @@ Prototype of an AI-powered Interactive Voice Response system using GPT-4o, demon
 ### Section 3: End-to-End vs Fragmented Models
 **Author:** Maria Teresa Daffan
 
-Compares predicting call cost directly (E2E) versus combining individual component predictions. E2E XGBoost achieves R² = 0.108, Spearman ρ = 0.324.
+Compares predicting call cost directly (E2E) versus combining individual component predictions. E2E XGBoost achieves R² = 0.097, Spearman ρ = 0.313.
 
-### Section 4: Agent Recommender System
+### Section 4: Agent Training Prioritization System
 **Author:** Raquel Santos
 
-Collaborative filtering system for personalized agent training recommendations based on a 652 GCs × 102 topics performance matrix.
+Training prioritization system using collaborative filtering and matrix factorization to identify agent skill gaps and generate business-relevant training priorities based on a 652 GCs × 102 topics performance matrix.
 
 ### Section 5: Reinforcement Learning
 **Author:** Marvin Schumann

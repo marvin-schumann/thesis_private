@@ -24,12 +24,7 @@ The prototype demonstrates an LLM-powered IVR system that:
 
 ## Output
 
-The system produces a structured handover package containing:
-- Customer number
-- Service type
-- Problem description
-- Customer sentiment
-- Recommended next steps
+The system produces a structured handover package (JSON file) containing customer number, service type, a long and a short summary and all other information that was collected.
 
 ## Dependencies
 
