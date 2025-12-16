@@ -1,2 +1,0 @@
-policy_name,cost_per_call,calls_per_day,efficiency_pct,invalid_actions_pct,std_dev,training_steps,seed
-DQN (Masked),26.20923948117457,25.1,4.254237288135593,,1.5877638885960705,200000,42

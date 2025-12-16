@@ -1,5 +1,0 @@
-mode,policy,avg_cost_per_call,std_cost_per_call,avg_calls_handled,n_episodes
-random,Random,27.09335234976934,0.2725888531598712,658.0,2
-random,Greedy XGBoost,23.569563339393518,0.22402219502289622,658.0,2
-calendar_day,Random,23.977763519780815,1.1415952440603598,36.3,10
-calendar_day,Greedy XGBoost,20.26739238687625,1.6352137685725758,36.3,10
